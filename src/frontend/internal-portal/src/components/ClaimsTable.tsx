@@ -27,45 +27,60 @@ export function ClaimsTable({ claims, onRowClick, roleVisibility }: Props) {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
-          style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #d1d5db' }}>
+      <div className="flex flex-wrap gap-2 mb-4">
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
           <option value="">All Statuses</option>
-          {['SUBMITTED','ASSIGNED','UNDER_SURVEY','SURVEYED','UNDER_ADJUDICATION','APPROVED','REJECTED','PAID']
-            .map((s) => <option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
+          {['SUBMITTED', 'ASSIGNED', 'UNDER_SURVEY', 'SURVEYED', 'UNDER_ADJUDICATION', 'APPROVED', 'REJECTED', 'PAID']
+            .map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
         </select>
-        <button onClick={() => setSortDir((d) => d === 'asc' ? 'desc' : 'asc')}
-          style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #d1d5db', cursor: 'pointer', background: '#f9fafb' }}>
+        <button
+          onClick={() => setSortDir((d) => d === 'asc' ? 'desc' : 'asc')}
+          className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white hover:bg-gray-50 transition-colors"
+        >
           Incident Date {sortDir === 'asc' ? '↑' : '↓'}
         </button>
       </div>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ background: '#f9fafb', textAlign: 'left' }}>
-            {['Claim #','Policy','Status','Incident Date', ...(showAssigned ? ['Assigned'] : [])].map((h) => (
-              <th key={h} style={{ padding: '10px 12px', borderBottom: '2px solid #e5e7eb', fontSize: 13, fontWeight: 600 }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {filtered.map((c) => (
-            <tr key={c.id} tabIndex={0} onClick={() => onRowClick(c.id)}
-              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onRowClick(c.id)}
-              style={{ cursor: 'pointer', borderBottom: '1px solid #e5e7eb' }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-              <td style={{ padding: '10px 12px' }}>{c.claim_number}</td>
-              <td style={{ padding: '10px 12px' }}>{c.policy_number}</td>
-              <td style={{ padding: '10px 12px' }}><ClaimStatusBadge status={c.status} /></td>
-              <td style={{ padding: '10px 12px' }}>{c.incident_date}</td>
-              {showAssigned && <td style={{ padding: '10px 12px' }}>{c.assigned_staff_name ?? '—'}</td>}
+      <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="bg-gray-50 text-left">
+              {['Claim #', 'Policy', 'Status', 'Incident Date', ...(showAssigned ? ['Assigned'] : [])].map((h) => (
+                <th key={h} className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+                  {h}
+                </th>
+              ))}
             </tr>
-          ))}
-          {filtered.length === 0 && (
-            <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: '#6b7280' }}>No claims found.</td></tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-100">
+            {filtered.map((c) => (
+              <tr
+                key={c.id}
+                tabIndex={0}
+                onClick={() => onRowClick(c.id)}
+                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onRowClick(c.id)}
+                className="cursor-pointer hover:bg-gray-50 transition-colors"
+              >
+                <td className="px-4 py-3 text-sm font-medium text-gray-900">{c.claim_number}</td>
+                <td className="px-4 py-3 text-sm text-gray-600">{c.policy_number}</td>
+                <td className="px-4 py-3"><ClaimStatusBadge status={c.status} /></td>
+                <td className="px-4 py-3 text-sm text-gray-600">{c.incident_date}</td>
+                {showAssigned && <td className="px-4 py-3 text-sm text-gray-600">{c.assigned_staff_name ?? '—'}</td>}
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-500">
+                  No claims found.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

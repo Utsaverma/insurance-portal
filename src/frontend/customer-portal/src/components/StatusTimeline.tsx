@@ -10,27 +10,22 @@ export function StatusTimeline({ history }: Props) {
     (a, b) => new Date(a.changed_at).getTime() - new Date(b.changed_at).getTime()
   )
   return (
-    <div style={{ position: 'relative', paddingLeft: 24 }}>
+    <div className="relative pl-6">
       {sorted.map((entry, i) => (
-        <div key={entry.id} style={{ position: 'relative', paddingBottom: 20 }}>
-          <div
-            style={{
-              position: 'absolute', left: -24, top: 4,
-              width: 12, height: 12, borderRadius: '50%',
-              background: '#3b82f6', border: '2px solid #fff', boxShadow: '0 0 0 2px #3b82f6',
-            }}
-          />
+        <div key={entry.id} className="relative pb-6">
+          <span className="absolute -left-1.5 top-1 w-3 h-3 rounded-full bg-blue-500 border-2 border-white ring-2 ring-blue-500" />
           {i < sorted.length - 1 && (
-            <div style={{
-              position: 'absolute', left: -19, top: 16, bottom: 0,
-              width: 2, background: '#e5e7eb',
-            }} />
+            <span className="absolute left-0 top-4 bottom-0 w-0.5 bg-gray-200" />
           )}
-          <ClaimStatusBadge status={entry.to_status as ClaimStatus} />
-          <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-            {new Date(entry.changed_at).toLocaleString()}
+          <div className="ml-2">
+            <ClaimStatusBadge status={entry.to_status as ClaimStatus} />
+            <div className="text-xs text-gray-500 mt-1">
+              {new Date(entry.changed_at).toLocaleString()}
+            </div>
+            {entry.note && (
+              <div className="text-sm text-gray-700 mt-1">{entry.note}</div>
+            )}
           </div>
-          {entry.note && <div style={{ fontSize: 13, marginTop: 2, color: '#374151' }}>{entry.note}</div>}
         </div>
       ))}
     </div>

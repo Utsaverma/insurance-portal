@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { listClaims } from '../api/claims'
 import { ClaimsTable } from '../components/ClaimsTable'
-import type { Claim, UserRole } from '../types'
+import type { Claim } from '../types'
 
 export function Dashboard() {
   const { currentUser, logout } = useAuth()
@@ -18,31 +18,46 @@ export function Dashboard() {
   const canViewReports = currentUser?.role === 'CASE_MANAGER' || currentUser?.role === 'REGIONAL_MANAGER'
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: 24 }}>
-      <nav style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, padding: '12px 0', borderBottom: '1px solid #e5e7eb' }}>
-        <span style={{ fontWeight: 700, fontSize: 18 }}>eClaims Internal</span>
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-          <span style={{ color: '#6b7280', fontSize: 14 }}>{currentUser?.name} · {currentUser?.role}</span>
-          {canViewReports && (
-            <button onClick={() => navigate('/reports')}
-              style={{ padding: '6px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 6, cursor: 'pointer' }}>
-              Reports
-            </button>
-          )}
-          <button onClick={logout}
-            style={{ padding: '6px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 6, cursor: 'pointer' }}>
-            Logout
-          </button>
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white border-b border-gray-200">
+        <div className="max-w-6xl mx-auto px-4 md:px-8">
+          <div className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-lg font-bold text-blue-900">eClaims Internal</span>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-sm text-gray-500">
+                {currentUser?.name} · <span className="font-medium text-gray-700">{currentUser?.role}</span>
+              </span>
+              {canViewReports && (
+                <button
+                  onClick={() => navigate('/reports')}
+                  className="px-3 py-1.5 text-sm border border-gray-300 bg-white hover:bg-gray-50 rounded-md transition-colors"
+                >
+                  Reports
+                </button>
+              )}
+              <button
+                onClick={logout}
+                className="px-3 py-1.5 text-sm border border-gray-300 bg-white hover:bg-gray-50 rounded-md transition-colors"
+              >
+                Logout
+              </button>
+            </div>
+          </div>
         </div>
-      </nav>
-      <h1 style={{ fontSize: 22, marginBottom: 20 }}>Claims Queue</h1>
-      {loading ? <p>Loading…</p> : (
-        <ClaimsTable
-          claims={claims}
-          onRowClick={(id) => navigate(`/claims/${id}`)}
-          roleVisibility={currentUser?.role ?? 'AUDITOR'}
-        />
-      )}
+      </header>
+
+      <main className="max-w-6xl mx-auto px-4 py-8 md:px-8">
+        <h1 className="text-xl font-semibold text-gray-900 mb-6">Claims Queue</h1>
+        {loading ? (
+          <p className="text-sm text-gray-500">Loading…</p>
+        ) : (
+          <ClaimsTable
+            claims={claims}
+            onRowClick={(id) => navigate(`/claims/${id}`)}
+            roleVisibility={currentUser?.role ?? 'AUDITOR'}
+          />
+        )}
+      </main>
     </div>
   )
 }

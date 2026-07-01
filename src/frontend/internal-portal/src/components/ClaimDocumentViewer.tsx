@@ -16,18 +16,22 @@ export function ClaimDocumentViewer({ claimId, documents }: Props) {
     URL.revokeObjectURL(url)
   }
 
-  if (documents.length === 0) return <p style={{ color: '#6b7280' }}>No documents attached.</p>
+  if (documents.length === 0) return <p className="text-sm text-gray-500">No documents attached.</p>
 
   return (
-    <ul style={{ listStyle: 'none', padding: 0 }}>
+    <ul className="divide-y divide-gray-100 rounded-xl border border-gray-200 overflow-hidden">
       {documents.map((doc) => (
-        <li key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #e5e7eb' }}>
+        <li key={doc.id} className="flex items-center justify-between px-4 py-3 bg-white">
           <div>
-            <div style={{ fontWeight: 500 }}>{doc.filename}</div>
-            <div style={{ fontSize: 12, color: '#6b7280' }}>{doc.mime_type} · {(doc.file_size_bytes / 1024).toFixed(1)} KB</div>
+            <div className="text-sm font-medium text-gray-900">{doc.filename}</div>
+            <div className="text-xs text-gray-500 mt-0.5">
+              {doc.mime_type} · {(doc.file_size_bytes / 1024).toFixed(1)} KB
+            </div>
           </div>
-          <button onClick={() => handleDownload(doc)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', fontWeight: 600 }}>
+          <button
+            onClick={() => handleDownload(doc)}
+            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+          >
             Download
           </button>
         </li>

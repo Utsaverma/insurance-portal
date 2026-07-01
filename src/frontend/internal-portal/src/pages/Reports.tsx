@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { listClaims } from '../api/claims'
 import { ClaimStatusBadge } from '../components/ClaimStatusBadge'
-import type { Claim, ClaimStatus } from '../types'
+import type { Claim } from '../types'
 
 export function Reports() {
+  const navigate = useNavigate()
   const [claims, setClaims] = useState<Claim[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -26,49 +28,65 @@ export function Reports() {
 
   const fmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 
-  if (loading) return <div style={{ padding: 40 }}>Loading…</div>
+  if (loading) return <div className="p-10 text-sm text-gray-500">Loading…</div>
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: 24 }}>
-      <h1 style={{ fontSize: 22, marginBottom: 20 }}>Claims Reports</h1>
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-        {Object.entries(stats.byStatus).map(([status, count]) => (
-          <div key={status} style={{ padding: '10px 16px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, minWidth: 120 }}>
-            <div style={{ fontSize: 12, color: '#6b7280' }}>{status.replace(/_/g, ' ')}</div>
-            <div style={{ fontWeight: 700, fontSize: 22 }}>{count}</div>
-          </div>
-        ))}
-        <div style={{ padding: '10px 16px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, minWidth: 180 }}>
-          <div style={{ fontSize: 12, color: '#6b7280' }}>Total Approved Amount</div>
-          <div style={{ fontWeight: 700, fontSize: 18, color: '#16a34a' }}>{fmt.format(stats.totalApproved)}</div>
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-5xl mx-auto px-4 py-8 md:px-8">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-xl font-semibold text-gray-900">Claims Reports</h1>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+          >
+            ← Back to Queue
+          </button>
         </div>
-        <div style={{ padding: '10px 16px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, minWidth: 160 }}>
-          <div style={{ fontSize: 12, color: '#6b7280' }}>Avg Processing (days)</div>
-          <div style={{ fontWeight: 700, fontSize: 22, color: '#2563eb' }}>{stats.avgProcessingDays.toFixed(1)}</div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-8">
+          {Object.entries(stats.byStatus).map(([status, count]) => (
+            <div key={status} className="p-4 bg-white border border-gray-200 rounded-xl">
+              <div className="text-xs text-gray-500 mb-1">{status.replace(/_/g, ' ')}</div>
+              <div className="text-2xl font-bold text-gray-900">{count}</div>
+            </div>
+          ))}
+          <div className="p-4 bg-green-50 border border-green-200 rounded-xl col-span-2 sm:col-span-1">
+            <div className="text-xs text-gray-500 mb-1">Total Approved Amount</div>
+            <div className="text-lg font-bold text-green-700">{fmt.format(stats.totalApproved)}</div>
+          </div>
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl col-span-2 sm:col-span-1">
+            <div className="text-xs text-gray-500 mb-1">Avg Processing (days)</div>
+            <div className="text-2xl font-bold text-blue-700">{stats.avgProcessingDays.toFixed(1)}</div>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-50 text-left">
+                {['Claim #', 'Policy', 'Status', 'Claimed', 'Processing (days)'].map((h) => (
+                  <th key={h} className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-100">
+              {claims.map((c) => (
+                <tr key={c.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-3 text-sm font-medium text-gray-900">{c.claim_number}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{c.policy_number}</td>
+                  <td className="px-4 py-3"><ClaimStatusBadge status={c.status} /></td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{fmt.format(Number(c.claimed_amount))}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    {((Date.now() - new Date(c.created_at).getTime()) / 86400000).toFixed(1)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ background: '#f9fafb', textAlign: 'left' }}>
-            {['Claim #', 'Policy', 'Status', 'Claimed', 'Processing (days)'].map((h) => (
-              <th key={h} style={{ padding: '10px 12px', borderBottom: '2px solid #e5e7eb', fontSize: 13 }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {claims.map((c) => (
-            <tr key={c.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-              <td style={{ padding: '10px 12px' }}>{c.claim_number}</td>
-              <td style={{ padding: '10px 12px' }}>{c.policy_number}</td>
-              <td style={{ padding: '10px 12px' }}><ClaimStatusBadge status={c.status} /></td>
-              <td style={{ padding: '10px 12px' }}>{fmt.format(Number(c.claimed_amount))}</td>
-              <td style={{ padding: '10px 12px' }}>
-                {((Date.now() - new Date(c.created_at).getTime()) / 86400000).toFixed(1)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   )
 }

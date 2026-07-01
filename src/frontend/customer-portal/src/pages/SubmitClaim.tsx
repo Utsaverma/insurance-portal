@@ -31,37 +31,67 @@ export function SubmitClaim() {
   }
 
   return (
-    <div style={{ maxWidth: 600, margin: '40px auto', padding: 24 }}>
-      <h1 style={{ marginBottom: 24, fontSize: 24 }}>Submit New Claim</h1>
-      <form onSubmit={handleSubmit}>
-        {[
-          { label: 'Policy Number', name: 'policy_number', type: 'text' },
-          { label: 'Incident Date', name: 'incident_date', type: 'date', max: today },
-          { label: 'Claimed Amount (₹)', name: 'claimed_amount', type: 'number' },
-        ].map(({ label, name, type, max }) => (
-          <div key={name} style={{ marginBottom: 16 }}>
-            <label>{label}</label>
-            <input type={type} name={name} value={(form as any)[name]} max={max} onChange={handleChange}
-              required style={{ display: 'block', width: '100%', marginTop: 4, padding: 8, border: '1px solid #d1d5db', borderRadius: 6 }} />
-          </div>
-        ))}
-        <div style={{ marginBottom: 16 }}>
-          <label>Incident Description (min 20 chars)</label>
-          <textarea name="incident_description" value={form.incident_description} onChange={handleChange}
-            required rows={4} style={{ display: 'block', width: '100%', marginTop: 4, padding: 8, border: '1px solid #d1d5db', borderRadius: 6 }} />
-        </div>
-        <div style={{ marginBottom: 20 }}>
-          <label>Supporting Document (optional)</label>
-          <div style={{ marginTop: 4 }}>
-            <FileUpload onFileSelect={setSelectedFile} disabled={loading} />
-          </div>
-        </div>
-        {error && <p style={{ color: '#ef4444' }}>{error}</p>}
-        <button type="submit" disabled={loading}
-          style={{ width: '100%', padding: '10px 0', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 6, cursor: loading ? 'not-allowed' : 'pointer' }}>
-          {loading ? 'Submitting…' : 'Submit Claim'}
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-2xl mx-auto px-4 py-8 md:px-8">
+        <button
+          onClick={() => navigate('/dashboard')}
+          className="mb-5 text-sm text-blue-500 hover:text-blue-700 font-medium"
+        >
+          ← Back to Dashboard
         </button>
-      </form>
+        <h1 className="text-2xl font-semibold text-gray-900 mb-6">Submit New Claim</h1>
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {[
+              { label: 'Policy Number', name: 'policy_number', type: 'text' },
+              { label: 'Incident Date', name: 'incident_date', type: 'date', max: today },
+              { label: 'Claimed Amount (₹)', name: 'claimed_amount', type: 'number' },
+            ].map(({ label, name, type, max }) => (
+              <div key={name}>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+                <input
+                  type={type}
+                  name={name}
+                  value={(form as any)[name]}
+                  max={max}
+                  onChange={handleChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            ))}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Incident Description{' '}
+                <span className="text-gray-400 font-normal">(min 20 chars)</span>
+              </label>
+              <textarea
+                name="incident_description"
+                value={form.incident_description}
+                onChange={handleChange}
+                required
+                rows={4}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Supporting Document{' '}
+                <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <FileUpload onFileSelect={setSelectedFile} disabled={loading} />
+            </div>
+            {error && <p className="text-sm text-red-500">{error}</p>}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white text-sm font-medium rounded-md transition-colors disabled:cursor-not-allowed"
+            >
+              {loading ? 'Submitting…' : 'Submit Claim'}
+            </button>
+          </form>
+        </div>
+      </div>
     </div>
   )
 }
