@@ -1,22 +1,20 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
+import bcrypt
 from fastapi import HTTPException, status
 from jose import JWTError, ExpiredSignatureError, jwt
-from passlib.context import CryptContext
 
 from config import settings
 from models.schemas import TokenResponse
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 def hash_password(plain: str) -> str:
-    return pwd_context.hash(plain)
+    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
 def create_jwt(data: dict, expires_delta: timedelta) -> str:

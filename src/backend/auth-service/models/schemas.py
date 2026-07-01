@@ -54,4 +54,3 @@ class UserResponse(BaseModel):
 
 class UserUpdateRequest(BaseModel):
     full_name: str | None = None
-    address: str | None = None
