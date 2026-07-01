@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getClaim, getClaimHistory, getClaimDocuments, downloadDocument, type Claim, type ClaimHistoryEntry, type ClaimDocument } from '../api/claims'
+import {
+  getClaim, getClaimHistory, getClaimDocuments, downloadDocument,
+  type Claim, type ClaimHistoryEntry, type ClaimDocument,
+} from '../api/claims'
 import { ClaimStatusBadge } from '../components/ClaimStatusBadge'
 import { StatusTimeline } from '../components/StatusTimeline'
 
@@ -27,43 +30,62 @@ export function ClaimDetail() {
     URL.revokeObjectURL(url)
   }
 
-  if (loading) return <div style={{ padding: 40 }}>Loading…</div>
-  if (!claim) return <div style={{ padding: 40 }}>Claim not found.</div>
+  if (loading) return <div className="p-10 text-gray-500 text-sm">Loading…</div>
+  if (!claim) return <div className="p-10 text-gray-500 text-sm">Claim not found.</div>
 
   return (
-    <div style={{ maxWidth: 900, margin: '40px auto', padding: 24 }}>
-      <button onClick={() => navigate('/dashboard')} style={{ marginBottom: 20, background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6' }}>← Back to Dashboard</button>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h1 style={{ fontSize: 24 }}>{claim.claim_number}</h1>
-        <ClaimStatusBadge status={claim.status} />
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 32 }}>
-        {[
-          ['Policy', claim.policy_number],
-          ['Incident Date', claim.incident_date],
-          ['Claimed Amount', `₹${Number(claim.claimed_amount).toLocaleString('en-IN')}`],
-          ['Submitted', new Date(claim.created_at).toLocaleDateString()],
-        ].map(([label, value]) => (
-          <div key={label} style={{ padding: 16, background: '#f9fafb', borderRadius: 8 }}>
-            <div style={{ fontSize: 12, color: '#6b7280' }}>{label}</div>
-            <div style={{ fontWeight: 600, marginTop: 4 }}>{value}</div>
-          </div>
-        ))}
-      </div>
-      <p style={{ color: '#374151', marginBottom: 32 }}>{claim.incident_description}</p>
-      <h2 style={{ fontSize: 18, marginBottom: 16 }}>Documents</h2>
-      {docs.length === 0 ? <p style={{ color: '#6b7280' }}>No documents attached.</p> : (
-        <ul style={{ listStyle: 'none', padding: 0, marginBottom: 32 }}>
-          {docs.map((doc) => (
-            <li key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e5e7eb' }}>
-              <span>{doc.filename}</span>
-              <button onClick={() => handleDownload(doc)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6' }}>Download</button>
-            </li>
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-4xl mx-auto px-4 py-8 md:px-8">
+        <button
+          onClick={() => navigate('/dashboard')}
+          className="mb-5 text-sm text-blue-500 hover:text-blue-700 font-medium"
+        >
+          ← Back to Dashboard
+        </button>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+          <h1 className="text-2xl font-semibold text-gray-900">{claim.claim_number}</h1>
+          <ClaimStatusBadge status={claim.status} />
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+          {[
+            ['Policy', claim.policy_number],
+            ['Incident Date', claim.incident_date],
+            ['Claimed Amount', `₹${Number(claim.claimed_amount).toLocaleString('en-IN')}`],
+            ['Submitted', new Date(claim.created_at).toLocaleDateString()],
+          ].map(([label, value]) => (
+            <div key={label} className="p-4 bg-white border border-gray-200 rounded-xl">
+              <div className="text-xs text-gray-500 mb-1">{label}</div>
+              <div className="text-sm font-semibold text-gray-900">{value}</div>
+            </div>
           ))}
-        </ul>
-      )}
-      <h2 style={{ fontSize: 18, marginBottom: 16 }}>Status History</h2>
-      <StatusTimeline history={history} />
+        </div>
+
+        <p className="text-gray-700 text-sm leading-relaxed mb-8">{claim.incident_description}</p>
+
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Documents</h2>
+        {docs.length === 0 ? (
+          <p className="text-sm text-gray-500 mb-8">No documents attached.</p>
+        ) : (
+          <ul className="mb-8 bg-white border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100">
+            {docs.map((doc) => (
+              <li key={doc.id} className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm text-gray-700">{doc.filename}</span>
+                <button
+                  onClick={() => handleDownload(doc)}
+                  className="text-sm text-blue-500 hover:text-blue-700 font-medium"
+                >
+                  Download
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Status History</h2>
+        <StatusTimeline history={history} />
+      </div>
     </div>
   )
 }

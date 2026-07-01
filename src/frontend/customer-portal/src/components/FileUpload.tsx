@@ -40,30 +40,29 @@ export function FileUpload({ onFileSelect, disabled }: Props) {
           if (file) handleFile(file)
         }}
         onClick={() => !disabled && inputRef.current?.click()}
-        style={{
-          border: `2px dashed ${isDragging ? '#3b82f6' : '#d1d5db'}`,
-          borderRadius: 8,
-          padding: 24,
-          textAlign: 'center',
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          background: isDragging ? '#eff6ff' : '#f9fafb',
-        }}
+        className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+          isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50'
+        } ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-gray-400 hover:bg-gray-100'}`}
       >
         {selected ? (
-          <span>{selected.name} ({(selected.size / 1024).toFixed(1)} KB)</span>
+          <span className="text-sm text-gray-700 font-medium">
+            {selected.name} <span className="text-gray-400">({(selected.size / 1024).toFixed(1)} KB)</span>
+          </span>
         ) : (
-          <span style={{ color: '#6b7280' }}>Drag & drop or click to upload (PDF, JPG, PNG — max 10 MB)</span>
+          <span className="text-sm text-gray-500">
+            Drag &amp; drop or click to upload — PDF, JPG, PNG (max 10 MB)
+          </span>
         )}
       </div>
       <input
         ref={inputRef}
         type="file"
         accept=".jpg,.jpeg,.png,.pdf"
-        style={{ display: 'none' }}
+        className="hidden"
         disabled={disabled}
         onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
       />
-      {error && <p style={{ color: '#ef4444', marginTop: 4, fontSize: 13 }}>{error}</p>}
+      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
     </div>
   )
 }

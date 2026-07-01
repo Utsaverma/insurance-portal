@@ -1,5 +1,19 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+-- ─── SEQUENCES ─────────────────────────────────────────────────────────────
+
+CREATE SEQUENCE IF NOT EXISTS claim_seq START 1;
+
+-- ─── ENUM TYPES ────────────────────────────────────────────────────────────
+
+DO $$ BEGIN
+  CREATE TYPE claim_status AS ENUM (
+    'SUBMITTED','ASSIGNED','UNDER_SURVEY','SURVEYED',
+    'UNDER_ADJUDICATION','APPROVED','REJECTED','PAID'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 -- ─── TABLES ────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS users (
@@ -20,10 +34,7 @@ CREATE TABLE IF NOT EXISTS claims (
   claim_number         TEXT UNIQUE NOT NULL,
   customer_id          UUID NOT NULL REFERENCES users(id),
   policy_number        TEXT NOT NULL,
-  status               TEXT NOT NULL DEFAULT 'SUBMITTED'
-                         CHECK (status IN (
-                           'SUBMITTED','ASSIGNED','UNDER_SURVEY','SURVEYED',
-                           'UNDER_ADJUDICATION','APPROVED','REJECTED','PAID')),
+  status               claim_status NOT NULL DEFAULT 'SUBMITTED',
   claimed_amount       NUMERIC(12,2) NOT NULL,
   incident_description TEXT NOT NULL,
   assigned_to          UUID REFERENCES users(id),
