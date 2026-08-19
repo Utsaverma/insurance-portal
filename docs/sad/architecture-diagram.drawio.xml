@@ -607,7 +607,7 @@
     </mxGraphModel>
   </diagram>
   <diagram id="eclaims-logical" name="Logical Architecture">
-    <mxGraphModel dx="4066" dy="954" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1850" pageHeight="1860" math="0" shadow="0">
+    <mxGraphModel dx="4066" dy="954" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1850" pageHeight="1790" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -623,7 +623,7 @@
         <mxCell id="lg-band-users" parent="1" style="rounded=0;html=1;dashed=1;dashPattern=8 8;fillColor=#f5f5f5;strokeColor=#666666;" value="" vertex="1">
           <mxGeometry height="100" width="1240" x="-627" y="140" as="geometry" />
         </mxCell>
-        <mxCell id="lg-label-users" parent="1" style="text;html=1;align=right;verticalAlign=middle;spacingRight=12;fontSize=13;fontStyle=1;fontColor=#666666;" value="Users" vertex="1">
+        <mxCell id="lg-label-users" parent="1" style="rounded=0;html=1;fillColor=#666666;strokeColor=#3f3f3f;fontColor=#ffffff;fontSize=13;fontStyle=1;align=center;verticalAlign=middle;" value="Users" vertex="1">
           <mxGeometry height="100" width="200" x="-847" y="140" as="geometry" />
         </mxCell>
         <mxCell id="lg-u1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Policyholder / Customer (web, mobile-responsive)" vertex="1">
@@ -641,7 +641,7 @@
         <mxCell id="lg-band-presentation" parent="1" style="rounded=0;html=1;fillColor=#eaf2fc;strokeColor=#6c8ebf;" value="" vertex="1">
           <mxGeometry height="118" width="1240" x="-627" y="380" as="geometry" />
         </mxCell>
-        <mxCell id="lg-label-presentation" parent="1" style="text;html=1;align=right;verticalAlign=middle;spacingRight=12;fontSize=13;fontStyle=1;fontColor=#3f5f86;" value="Presentation Layer&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;&lt;i&gt;role-aware user interfaces&lt;/i&gt;&lt;/font&gt;" vertex="1">
+        <mxCell id="lg-label-presentation" parent="1" style="rounded=0;html=1;fillColor=#6c8ebf;strokeColor=#3f5f86;fontColor=#ffffff;fontSize=13;fontStyle=1;align=center;verticalAlign=middle;" value="Presentation Layer&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;&lt;i&gt;role-aware user interfaces&lt;/i&gt;&lt;/font&gt;" vertex="1">
           <mxGeometry height="118" width="200" x="-847" y="380" as="geometry" />
         </mxCell>
         <mxCell id="lg-p1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Customer Experience UI&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;&lt;i&gt;claim submission, tracking, payments&lt;/i&gt;&lt;/font&gt;" vertex="1">
@@ -659,7 +659,7 @@
         <mxCell id="lg-band-edge" parent="1" style="rounded=0;html=1;fillColor=#fdf1e3;strokeColor=#d79b00;" value="" vertex="1">
           <mxGeometry height="118" width="1240" x="-627" y="530" as="geometry" />
         </mxCell>
-        <mxCell id="lg-label-edge" parent="1" style="text;html=1;align=right;verticalAlign=middle;spacingRight=12;fontSize=13;fontStyle=1;fontColor=#a67600;" value="Access / Edge Layer&lt;br&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;i style=&quot;font-size: 11px; background-color: transparent; color: light-dark(rgb(166, 118, 0), rgb(175, 133, 32));&quot;&gt;· &lt;/i&gt;&lt;i style=&quot;font-size: 11px; background-color: transparent; color: light-dark(rgb(166, 118, 0), rgb(175, 133, 32));&quot;&gt;protect&lt;/i&gt;&lt;/div&gt;&lt;font style=&quot;font-size:11px&quot;&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;i style=&quot;background-color: transparent; color: light-dark(rgb(166, 118, 0), rgb(175, 133, 32));&quot;&gt;· route&lt;/i&gt;&lt;/div&gt;&lt;i&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;i style=&quot;background-color: transparent; color: light-dark(rgb(166, 118, 0), rgb(175, 133, 32));&quot;&gt;· authenticate&lt;/i&gt;&lt;/div&gt;&lt;/i&gt;&lt;/font&gt;" vertex="1">
+        <mxCell id="lg-label-edge" parent="1" style="rounded=0;html=1;fillColor=#d79b00;strokeColor=#a67600;fontColor=#ffffff;fontSize=13;fontStyle=1;align=center;verticalAlign=middle;" value="Access / Edge Layer&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;&lt;i&gt;protect · route · authenticate&lt;/i&gt;&lt;/font&gt;" vertex="1">
           <mxGeometry height="118" width="200" x="-847" y="530" as="geometry" />
         </mxCell>
         <mxCell id="lg-ed1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;fillColor=#ffe6cc;strokeColor=#d79b00;" value="Edge Protection" vertex="1">
@@ -677,7 +677,7 @@
         <mxCell id="lg-band-services" parent="1" style="rounded=0;html=1;fillColor=#eaf5e9;strokeColor=#82b366;verticalAlign=top;" value="" vertex="1">
           <mxGeometry height="430" width="1240" x="-627" y="680" as="geometry" />
         </mxCell>
-        <mxCell id="lg-label-services" parent="1" style="text;html=1;align=right;verticalAlign=top;spacingRight=12;spacingTop=10;fontSize=13;fontStyle=1;fontColor=#5b8a3f;" value="Application Services Layer&lt;br&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;i style=&quot;background-color: transparent; color: light-dark(rgb(91, 138, 63), rgb(104, 145, 80)); font-size: 11px;&quot;&gt;· &lt;/i&gt;&lt;i style=&quot;font-size: 11px; background-color: transparent; color: light-dark(rgb(91, 138, 63), rgb(104, 145, 80));&quot;&gt;service interfaces&amp;nbsp;&lt;/i&gt;&lt;/div&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;font style=&quot;font-size:11px&quot;&gt;&lt;i&gt;· functional modules&amp;nbsp;&lt;/i&gt;&lt;/font&gt;&lt;/div&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;font style=&quot;font-size:11px&quot;&gt;&lt;i&gt;· process orchestration&lt;/i&gt;&lt;/font&gt;&lt;/div&gt;" vertex="1">
+        <mxCell id="lg-label-services" parent="1" style="rounded=0;html=1;fillColor=#82b366;strokeColor=#5b8a3f;fontColor=#ffffff;fontSize=13;fontStyle=1;align=center;verticalAlign=top;spacingTop=10;" value="Application Services Layer&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;&lt;i&gt;service interfaces&lt;/i&gt;&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;&lt;i&gt;functional modules&lt;/i&gt;&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;&lt;i&gt;process orchestration&lt;/i&gt;&lt;/font&gt;" vertex="1">
           <mxGeometry height="430" width="200" x="-847" y="680" as="geometry" />
         </mxCell>
         <mxCell id="lg-svc-interface" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;fillColor=#d5e8d4;strokeColor=#82b366;" value="Service Interfaces &amp; API Facade" vertex="1">
@@ -728,7 +728,7 @@
         <mxCell id="lg-band-integration" parent="1" style="rounded=0;html=1;fillColor=#fdf6e0;strokeColor=#d6b656;" value="" vertex="1">
           <mxGeometry height="118" width="1240" x="-627" y="1142" as="geometry" />
         </mxCell>
-        <mxCell id="lg-label-integration" parent="1" style="text;html=1;align=right;verticalAlign=middle;spacingRight=12;fontSize=13;fontStyle=1;fontColor=#a67c00;" value="Integration &amp; Messaging Layer&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;&lt;i&gt;asynchronous, event-driven&lt;/i&gt;&lt;/font&gt;" vertex="1">
+        <mxCell id="lg-label-integration" parent="1" style="rounded=0;html=1;fillColor=#d6b656;strokeColor=#a67c00;fontColor=#5b4b12;fontSize=13;fontStyle=1;align=center;verticalAlign=middle;" value="Integration &amp; Messaging Layer&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;&lt;i&gt;asynchronous, event-driven&lt;/i&gt;&lt;/font&gt;" vertex="1">
           <mxGeometry height="118" width="200" x="-847" y="1142" as="geometry" />
         </mxCell>
         <mxCell id="lg-int1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;fillColor=#fff2cc;strokeColor=#d6b656;" value="Domain Event Backbone" vertex="1">
@@ -746,7 +746,7 @@
         <mxCell id="lg-band-data" parent="1" style="rounded=0;html=1;fillColor=#f2ecf5;strokeColor=#9673a6;" value="" vertex="1">
           <mxGeometry height="188" width="1240" x="-627" y="1292" as="geometry" />
         </mxCell>
-        <mxCell id="lg-label-data" parent="1" style="text;html=1;align=right;verticalAlign=middle;spacingRight=12;fontSize=13;fontStyle=1;fontColor=#6f4c82;" value="Data Layer&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;&lt;i&gt;polyglot logical stores&lt;/i&gt;&lt;/font&gt;" vertex="1">
+        <mxCell id="lg-label-data" parent="1" style="rounded=0;html=1;fillColor=#9673a6;strokeColor=#6f4c82;fontColor=#ffffff;fontSize=13;fontStyle=1;align=center;verticalAlign=middle;" value="Data Layer&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;&lt;i&gt;polyglot logical stores&lt;/i&gt;&lt;/font&gt;" vertex="1">
           <mxGeometry height="188" width="200" x="-847" y="1292" as="geometry" />
         </mxCell>
         <mxCell id="lg-dal" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;fillColor=#e1d5e7;strokeColor=#9673a6;" value="Data Access &amp; Mapping Components" vertex="1">
@@ -773,20 +773,23 @@
         <mxCell id="lg-band-external" parent="1" style="rounded=0;html=1;dashed=1;dashPattern=8 8;fillColor=#fbfbfb;strokeColor=#999999;" value="" vertex="1">
           <mxGeometry height="118" width="1020" x="-627" y="1512" as="geometry" />
         </mxCell>
-        <mxCell id="lg-label-external" parent="1" style="text;html=1;align=right;verticalAlign=middle;spacingRight=12;fontSize=13;fontStyle=1;fontColor=#666666;" value="External Systems &amp; Providers" vertex="1">
+        <mxCell id="lg-label-external" parent="1" style="rounded=0;html=1;dashed=1;dashPattern=6 6;fillColor=#999999;strokeColor=#666666;fontColor=#ffffff;fontSize=13;fontStyle=1;align=center;verticalAlign=middle;" value="External Systems &amp; Providers" vertex="1">
           <mxGeometry height="118" width="200" x="-847" y="1512" as="geometry" />
         </mxCell>
         <mxCell id="lg-ext1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#ffffff;strokeColor=#999999;fontStyle=2;" value="Payment Gateway" vertex="1">
-          <mxGeometry height="68" width="235" x="-611" y="1542" as="geometry" />
+          <mxGeometry height="68" width="184" x="-611" y="1542" as="geometry" />
         </mxCell>
         <mxCell id="lg-ext2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#ffffff;strokeColor=#999999;fontStyle=2;" value="Enterprise Identity Provider" vertex="1">
-          <mxGeometry height="68" width="235" x="-360" y="1542" as="geometry" />
+          <mxGeometry height="68" width="184" x="-410" y="1542" as="geometry" />
         </mxCell>
         <mxCell id="lg-ext3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#ffffff;strokeColor=#999999;fontStyle=2;" value="SMS &amp; Email Delivery Providers" vertex="1">
-          <mxGeometry height="68" width="235" x="-109" y="1542" as="geometry" />
+          <mxGeometry height="68" width="184" x="-209" y="1542" as="geometry" />
         </mxCell>
         <mxCell id="lg-ext4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#ffffff;strokeColor=#8c8c8c;fontStyle=2;" value="Car-Rental Partner System (integration deferred)" vertex="1">
-          <mxGeometry height="68" width="235" x="142" y="1542" as="geometry" />
+          <mxGeometry height="68" width="184" x="-8" y="1542" as="geometry" />
+        </mxCell>
+        <mxCell id="lg-ext5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#fff2f0;strokeColor=#b85450;fontStyle=2;" value="Policy Administration System (to be confirmed)" vertex="1">
+          <mxGeometry height="68" width="184" x="193" y="1542" as="geometry" />
         </mxCell>
         <mxCell id="lg-cloud-out" parent="1" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=12;fontStyle=1;fontColor=#666666;" value="Internet&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;REST / JSON over HTTPS&lt;/font&gt;" vertex="1">
           <mxGeometry height="76" width="200" x="576" y="1560" as="geometry" />
@@ -880,65 +883,62 @@
         <mxCell id="lg-e9" edge="1" parent="1" source="lg-crosscut" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=12;labelBackgroundColor=#ffffff;endArrow=open;dashed=1;strokeColor=#8c8c8c;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" target="lg-band-services" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="lg-legend" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fbfbfb;strokeColor=#d5d5d5;" value="" vertex="1">
-          <mxGeometry height="46" width="1760" x="-847" y="1660" as="geometry" />
-        </mxCell>
         <mxCell id="lg-kw1" parent="1" style="rounded=0;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="" vertex="1">
-          <mxGeometry height="18" width="22" x="-757" y="1676" as="geometry" />
+          <mxGeometry height="18" width="22" x="-787" y="88" as="geometry" />
         </mxCell>
         <mxCell id="lg-kwl1" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;" value="Users / Client" vertex="1">
-          <mxGeometry height="22" width="155" x="-729" y="1676" as="geometry" />
+          <mxGeometry height="30" width="110" x="-759" y="82" as="geometry" />
         </mxCell>
         <mxCell id="lg-kw2" parent="1" style="rounded=0;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" value="" vertex="1">
-          <mxGeometry height="18" width="22" x="-572" y="1676" as="geometry" />
+          <mxGeometry height="18" width="22" x="-637" y="88" as="geometry" />
         </mxCell>
         <mxCell id="lg-kwl2" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;" value="Edge / Gateway" vertex="1">
-          <mxGeometry height="22" width="155" x="-544" y="1676" as="geometry" />
+          <mxGeometry height="30" width="110" x="-609" y="82" as="geometry" />
         </mxCell>
         <mxCell id="lg-kw3" parent="1" style="rounded=0;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="" vertex="1">
-          <mxGeometry height="18" width="22" x="-387" y="1676" as="geometry" />
+          <mxGeometry height="18" width="22" x="-487" y="88" as="geometry" />
         </mxCell>
         <mxCell id="lg-kwl3" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;" value="Application Services" vertex="1">
-          <mxGeometry height="22" width="155" x="-359" y="1676" as="geometry" />
+          <mxGeometry height="30" width="160" x="-459" y="82" as="geometry" />
         </mxCell>
         <mxCell id="lg-kw4" parent="1" style="rounded=0;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="" vertex="1">
-          <mxGeometry height="18" width="22" x="-202" y="1676" as="geometry" />
+          <mxGeometry height="18" width="22" x="-287" y="88" as="geometry" />
         </mxCell>
         <mxCell id="lg-kwl4" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;" value="Integration / Messaging" vertex="1">
-          <mxGeometry height="22" width="155" x="-174" y="1676" as="geometry" />
+          <mxGeometry height="30" width="180" x="-259" y="82" as="geometry" />
         </mxCell>
         <mxCell id="lg-kw5" parent="1" style="rounded=0;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" value="" vertex="1">
-          <mxGeometry height="18" width="22" x="-17" y="1676" as="geometry" />
+          <mxGeometry height="18" width="22" x="-67" y="88" as="geometry" />
         </mxCell>
         <mxCell id="lg-kwl5" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;" value="Data" vertex="1">
-          <mxGeometry height="22" width="155" x="11" y="1676" as="geometry" />
+          <mxGeometry height="30" width="60" x="-39" y="82" as="geometry" />
         </mxCell>
         <mxCell id="lg-kw6" parent="1" style="rounded=0;html=1;fillColor=#f5f5f5;strokeColor=#666666;" value="" vertex="1">
-          <mxGeometry height="18" width="22" x="168" y="1676" as="geometry" />
+          <mxGeometry height="18" width="22" x="33" y="88" as="geometry" />
         </mxCell>
         <mxCell id="lg-kwl6" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;" value="Platform / Cross-Cutting" vertex="1">
-          <mxGeometry height="22" width="155" x="196" y="1676" as="geometry" />
+          <mxGeometry height="30" width="185" x="61" y="82" as="geometry" />
         </mxCell>
         <mxCell id="lg-kw7" parent="1" style="rounded=0;html=1;dashed=1;dashPattern=6 6;fillColor=#ffffff;strokeColor=#999999;" value="" vertex="1">
-          <mxGeometry height="18" width="22" x="353" y="1676" as="geometry" />
+          <mxGeometry height="18" width="22" x="258" y="88" as="geometry" />
         </mxCell>
         <mxCell id="lg-kwl7" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;" value="External / Providers" vertex="1">
-          <mxGeometry height="22" width="155" x="381" y="1676" as="geometry" />
+          <mxGeometry height="30" width="160" x="286" y="82" as="geometry" />
         </mxCell>
         <mxCell id="lg-kw8" parent="1" style="shape=cloud;html=1;fillColor=#ffffff;strokeColor=#999999;" value="" vertex="1">
-          <mxGeometry height="18" width="26" x="538" y="1676" as="geometry" />
+          <mxGeometry height="18" width="26" x="458" y="88" as="geometry" />
         </mxCell>
         <mxCell id="lg-kwl8" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;" value="Internet boundary" vertex="1">
-          <mxGeometry height="22" width="145" x="570" y="1676" as="geometry" />
+          <mxGeometry height="30" width="140" x="490" y="82" as="geometry" />
         </mxCell>
         <mxCell id="lg-kw9" parent="1" style="line;strokeWidth=3;strokeColor=#8c8c8c;dashed=1;html=1;" value="" vertex="1">
-          <mxGeometry height="18" width="26" x="728" y="1676" as="geometry" />
+          <mxGeometry height="18" width="26" x="642" y="88" as="geometry" />
         </mxCell>
         <mxCell id="lg-kwl9" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;" value="applies to every layer" vertex="1">
-          <mxGeometry height="22" width="155" x="760" y="1676" as="geometry" />
+          <mxGeometry height="30" width="170" x="674" y="82" as="geometry" />
         </mxCell>
         <mxCell id="lg-notes" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffdf3;strokeColor=#d6b656;fontColor=#5b4b12;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=8;" value="Notes &amp; Conventions:&lt;br&gt;1. This page is deliberately technology-agnostic — no product or cloud-service name appears anywhere on it. Layers name roles, not products; see page 4 (Layered Solution Architecture, SAD §4 / §8) for the concrete technology mapping of every role shown here.&lt;br&gt;2. Cross-cutting concerns X1–X12 are drawn once in the right-hand column but apply to every layer above and below them — they are not a separate deployment tier.&lt;br&gt;3. M1–M12 are logical functional modules, not deployment units; several may be co-located or independently deployed depending on the target environment.&lt;br&gt;4. The same logical architecture is realisable on cloud or on-premise infrastructure from one Infrastructure-as-Code codebase (SAD §7 Flexibility); a native mobile client is a Phase 2 addition to the Presentation Layer consuming the same Service Interfaces &amp; API Facade unchanged." vertex="1">
-          <mxGeometry height="90" width="1760" x="-847" y="1726" as="geometry" />
+          <mxGeometry height="90" width="1760" x="-847" y="1660" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
