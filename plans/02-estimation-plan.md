@@ -3,6 +3,8 @@
 ## Deliverable
 **File:** `docs/estimation/eclaims-estimation.md`
 
+> **Workbook build:** [plans/02.1-estimation-plan_v2.md](02.1-estimation-plan_v2.md) supplements this plan with a workbook version of the same 960 PD estimate — `docs/estimation/Utsav_eClaims_Estimates.xlsm`, in the Nagarro "AG Estimation Template v2.0.4" used by `Mohan_eClaims_Estimates-v2.xlsm` and `Somya_Estimates-eClaims.xlsm`. The workbook rebalances Phase 1 (Requirement Specs & System Design) upward against the two reference estimates — 70 PD discovery + 75 PD design/framework, vs. this plan's combined 75 — with the difference taken from Phase 2, which carries a 20% buffer here already. Section-by-section: A=70 (discovery), B=75 (design/framework/test cases), C=520 (dev, was Phase 2's 590), D=105 (testing, unchanged), E=120 (UAT+deployment+docs, was Phase 4+5's 75+45=120, unchanged), F=70 (PM, unchanged). Total stays 960 PD either way.
+
 ## Purpose
 A phased effort estimation for the full eClaims system implementation — covering all 6 project phases, with effort in person-days per role, total effort summary, resource plan, and milestone schedule.
 
@@ -163,6 +165,8 @@ A phased effort estimation for the full eClaims system implementation — coveri
 | 5. Go-Live & Transition | 45 | 3 weeks |
 | 6. Project Management | 70 | Spans full project |
 | **TOTAL** | **960 person-days** | **~33 weeks / ~8 months** |
+
+> Note: the workbook build ([02.1](02.1-estimation-plan_v2.md)) splits Phase 1 into two template sections — A (Discovery, 70 PD) and B (Design/Framework/Test Cases, 75 PD) — 70 PD more than this table's combined 75, taken from Phase 2 (520 PD in the workbook vs. 590 here). Phases 3, 4+5, and 6 are unchanged. Total holds at 960 PD.
 
 ---
 
