@@ -100,13 +100,13 @@ The platform is designed around a **governed claim lifecycle** (Submitted → As
 
 ## 4. Detailed Solution Architecture — Six-Layer Microservices on AWS
 
-eClaims follows a **layered, microservices reference architecture** deployed on **AWS ECS Fargate** (serverless containers) across multiple Availability Zones. The layering separates concerns cleanly, enabling independent scaling, evolution and reuse — a core YCompany design requirement. The companion diagram (`architecture-diagram.drawio.xml`) renders all six layers, the components in each, and the protocol-annotated data flows between them.
+eClaims follows a **layered, microservices reference architecture** deployed on **AWS ECS Fargate** (serverless containers) across multiple Availability Zones. The layering separates concerns cleanly, enabling independent scaling, evolution and reuse — a core YCompany design requirement. The companion diagram (`architecture-diagram.drawio.xml`) renders all six layers, the components in each, and the protocol-annotated data flows between them. The companion file also carries a System Context, a High Level Solution and a technology-agnostic Logical Architecture view ahead of this layered detail, and a Cloud / Deployment Architecture view immediately after it translating these six layers into a physical AWS network topology — VPC, Availability Zones, subnets and edge — followed by a dedicated CI/CD Pipeline view (Appendix B).
 
 **Architecture at a glance**
 
 ```
 Layer 1  Client / Edge          Customer · Internal · Partner SPAs (+ Mobile, Phase 2)
-Layer 2  API Gateway / Ingress  WAF+Shield · CloudFront · ALB · Auth (OAuth2/JWT)
+Layer 2  API Gateway / Ingress  Route 53 · WAF+Shield · CloudFront · ALB · Auth (OAuth2/JWT)
 Layer 3  Microservices          Core + Support services on ECS Fargate (Multi-AZ)
 Layer 4  Async / Messaging      EventBridge · SQS · SNS · Lambda
 Layer 5  Data (Polyglot)        PostgreSQL · MongoDB · Redis · OpenSearch · S3 · Redshift
@@ -120,6 +120,7 @@ Layer 6  Infrastructure         IAM/SSO · KMS · CloudWatch/X-Ray · CloudTrail
 
 ### Layer 2 — API Gateway / Ingress
 
+- **Amazon Route 53** — DNS resolution and health-checked routing at the entry point.
 - **AWS WAF + Shield** — protection against DDoS and the OWASP Top 10 at the edge.
 - **CloudFront CDN** — global caching of static assets, reducing latency and origin load.
 - **Application Load Balancer (ALB)** — Multi-AZ, health-checked routing to services.
@@ -181,9 +182,43 @@ These platform services govern **every layer above** and provide the non-functio
 - **Secrets Manager + KMS** — secret rotation and AES-256 encryption at rest.
 - **CloudWatch + X-Ray** — structured JSON logs and distributed tracing for debugging any error condition.
 - **CloudTrail** — an immutable audit log of every API call (supports non-repudiation).
-- **CodePipeline + CodeBuild** — CI/CD with blue-green deployment for zero-downtime releases.
+- **CodePipeline + CodeBuild + CodeDeploy** — CI/CD with blue-green deployment for zero-downtime releases; container images stored in **Amazon ECR**.
 - **Terraform** — Infrastructure-as-Code, enabling **both on-premise and AWS** deployment from one codebase.
 - **ECS Fargate** — serverless container orchestration with no EC2 fleet to manage.
+
+### Deployment Topology
+
+The diagram's fifth page, **Cloud / Deployment Architecture** (`eclaims-cloud`), translates the six
+logical layers above into a physical AWS network topology for **Phase 1: a single AWS Region,
+Multi-AZ** (multi-region active-active is a Phase 2 item, §9). Inbound traffic resolves through
+**Amazon Route 53** (**G1**) and passes through a global edge tier outside the Region — **G2** AWS
+WAF + Shield and **G3** CloudFront — before entering one **Amazon VPC** spread across three
+Availability Zones. Each zone repeats the same three-subnet pattern: a public subnet holding the
+Multi-AZ Application Load Balancer target (**V1**) and a NAT Gateway (**V2**); a private/app subnet
+running the ECS Fargate service tasks (**V3**) — every microservice from Layer 3, including the Auth
+Service that Layer 2 groups logically at the edge; and an isolated data subnet with no direct route to
+the internet, holding RDS PostgreSQL primary/standby (**V4**), ElastiCache Redis (**V5**) and a
+three-node OpenSearch domain (**V6**) for write quorum. AWS-managed, serverless services from Layers
+4–6 — EventBridge, SQS, SNS, Lambda, Step Functions, S3, Redshift, Secrets Manager, KMS, IAM,
+CloudWatch, X-Ray and CloudTrail (**N1–N12**) — sit outside the VPC's subnets, reached through VPC
+endpoints. Only the NAT Gateways carry egress to the external SaaS providers already introduced on
+page 1 (**D1–D5**, **E1**, and the still-unconfirmed Policy Administration System, **E3**). The
+release workflow that deploys into this runtime is detailed separately on page 6 (below).
+
+### CI/CD Pipeline
+
+The diagram's sixth page, **CI/CD Pipeline** (`eclaims-cicd`), details the release workflow Layer 6
+names only in passing — **AWS CodePipeline + CodeBuild + CodeDeploy + Amazon ECR**, a fully-managed,
+pay-per-use toolchain with no idle build server to run or patch, chosen over a self-managed
+alternative such as Jenkins. A push to the source repository (**P1**, platform not specified in the
+case study) triggers **CodePipeline** (**P2**), which runs three stages in sequence through a shared
+**Amazon S3** artifact bucket (**P3**) — **Stage 1 Build** (**P4** CodeBuild tests and builds a
+container image, pushed to **P5** ECR), **Stage 2 Infrastructure** (**P6** CodeBuild runs `terraform
+plan`/`apply` behind a manual approval gate), and **Stage 3 Deploy**, where **CodeDeploy** (**P7**)
+provisions a Green Fargate task set (**P11**) alongside the current Blue set (**P10**) on the same ECS
+Service (**P9**) shown on the Cloud/Deployment page, shifting ALB traffic (**P8**) gradually and
+rolling back automatically on a CloudWatch (**R1**) health alarm — the mechanism behind the
+zero-downtime NFR in §7.
 
 ---
 
@@ -276,7 +311,7 @@ The four workflows below trace a claim through its full lifecycle. Each numbered
 | Payments | **Stripe** (PCI-DSS Level 1) | Industry-standard, with built-in fraud detection; keeps YCompany out of PCI scope |
 | Container orchestration | **AWS ECS Fargate** | Serverless containers, no EC2 fleet to manage |
 | Infrastructure-as-Code | **Terraform** | Multi-target (cloud and on-premise), version-controlled infrastructure |
-| CI/CD | **AWS CodePipeline + CodeBuild** | AWS-native pipeline with blue-green support |
+| CI/CD | **AWS CodePipeline + CodeBuild + CodeDeploy + Amazon ECR** | AWS-native pipeline with blue-green support |
 | Observability | **CloudWatch + X-Ray + CloudTrail** | Native AWS integration with minimal operational overhead |
 | Security | **AWS WAF + Shield + KMS + IAM** | Layered, defence-in-depth security across the stack |
 | Data warehouse | **Amazon Redshift** | Petabyte-scale analytics for management reporting |
@@ -374,9 +409,17 @@ The matrix confirms that every capability called for in the case study is addres
 ### Appendix B — Architecture Diagram
 
 The full architecture is provided as an editable draw.io / diagrams.net source file at
-`docs/sad/architecture-diagram.drawio.xml`. It contains two pages:
+`docs/sad/architecture-diagram.drawio.xml`. It contains seven pages, reading top-down from business
+context to implementation detail:
 
-1. **Layered Solution Architecture** — the six layers as horizontal swim-lanes, every component labelled and colour-coded by layer, with directional data flows annotated by protocol (HTTPS/TLS, OAuth2/JWT, EventBridge/SQS/SNS, SQL, S3 API). Data-flow arrows for the four Section 6 workflows (Claim Submission & Assignment, Survey & Adjudication, Repair Tracking & Payment, Reporting) are colour-coded per workflow with a dedicated Flow Legend, so each business flow can be traced independently of the shared platform/infrastructure flows (shown in grey). The page also carries a capability-mapping callout explaining the Layer 2 API-Gateway design decision (§4) and the standard component-type legend.
-2. **Bounded Contexts (Domain View)** — the Customer, Internal and Partner domains and the event backbone that integrates them.
+1. **System Context** — eClaims drawn as a single black box against every actor and external system that touches it (MSAG "System Model — functional aspect"). Actors are tagged A1 (Customer) and B1–B6 (the six internal roles), C1–C2 (partners); external systems are tagged D1–D5 (Stripe, Okta, MongoDB Atlas, SNS, SES) and E1–E3 (the deferred car-rental API, customer-supplied evidence, and the open Policy Administration System item). An interaction register beneath the diagram tags each of the 17 flows with what crosses the boundary and over which channel/protocol, cross-referenced to §3, §5, §6 and §8.
+2. **High Level Solution** — a single compact one-page view of the entire solution (MSAG "Solution diagram"), aimed at senior stakeholders. Bands A–F run top to bottom (Users, Channels, Secure Edge, Business Capabilities C1–C6, Event Backbone, Information & Cloud Platform E1–E8, External Systems F1–F6), with the end-to-end claim flow numbered ①–⑩ directly on the edges and walked in prose in the notes panel.
+3. **Logical Architecture** — a technology-agnostic, layered view (MSAG "Application / Component Logical Architecture") naming roles rather than products, so it applies equally to the cloud or on-premise deployment option (§7). Functional modules are tagged M1–M12 and cross-cutting concerns X1–X12, drawn once in a dedicated right-hand column. See page 4 for the concrete technology mapping of every role shown here.
+4. **Layered Solution Architecture** — the six layers as horizontal swim-lanes, every component labelled and colour-coded by layer, with directional data flows annotated by protocol (HTTPS/TLS, OAuth2/JWT, EventBridge/SQS/SNS, SQL, S3 API). Data-flow arrows for the four Section 6 workflows (Claim Submission & Assignment, Survey & Adjudication, Repair Tracking & Payment, Reporting) are colour-coded per workflow with a dedicated Flow Legend, so each business flow can be traced independently of the shared platform/infrastructure flows (shown in grey). The page also carries a capability-mapping callout explaining the Layer 2 API-Gateway design decision (§4) and the standard component-type legend.
+5. **Cloud / Deployment Architecture** — the AWS network-topology realisation of the six layers above (MSAG "System Model — Technical aspect": deployment type, network type, data transmission), for the Phase 1 single-Region, Multi-AZ footprint (§9). Every component is drawn with real AWS Architecture Icons inside proper AWS group containers (Region/VPC/AZ/Subnet/Security-Group) rather than this file's usual plain colour blocks — scoped to this page and page 6 only. Amazon Route 53 (G1) fronts a global edge tier (G2 WAF + Shield, G3 CloudFront) ahead of one VPC spread across three Availability Zones, each repeating a public/private/data three-subnet pattern tagged V1–V6 (ALB target, NAT Gateway, ECS Fargate tasks, RDS Multi-AZ, ElastiCache Redis, OpenSearch); AWS-managed services reached via VPC endpoints are tagged N1–N12; the same external SaaS providers as page 1 are tagged D1–D5/E1, with the open Policy Administration System item (E3) carried through in the same to-be-confirmed styling.
+6. **CI/CD Pipeline** — the release workflow behind Layer 6's CodePipeline/CodeBuild/CodeDeploy/ECR toolchain, chosen for its fully-managed, pay-per-use cost profile over a self-run alternative like Jenkins. A source push (P1, platform not specified in the case study) triggers CodePipeline (P2) through three sequential stages — Build (P4 CodeBuild → P5 ECR), Infrastructure (P6 CodeBuild running Terraform plan/apply behind a manual approval gate), and Deploy — where CodeDeploy (P7) performs a blue/green release into the same Multi-AZ ECS Fargate service shown on page 5, shifting ALB traffic between the Blue (P10) and Green (P11) task sets and rolling back automatically on a CloudWatch alarm (R1).
+7. **Bounded Contexts (Domain View)** — the Customer, Internal and Partner domains and the event backbone that integrates them.
+
+Pages 1–3, 5 and 6 are new additions completing the Nagarro MSAG diagram set (`requirements/MSAG-Diagram-Preparation-Guidelines-v1.1.pdf`); pages 4 and 7 are unchanged from the original two-page deliverable, only re-sequenced within the file.
 
 To view or edit: open the file in the diagrams.net desktop application or at https://app.diagrams.net.

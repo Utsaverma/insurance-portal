@@ -366,6 +366,16 @@ implementation (see `plans/` for the architecture and rationale):
 The `plans/` directory contains the supporting engineering documents:
 
 - `01-sad-plan.md` — Software Architecture Document plan
+- `01.1-architecture-diagrams-plan.md` — amendment adding the System Context, High Level Solution
+  and Logical Architecture diagram pages
+- `01.2-cloud-architecture-diagram-plan.md` — amendment adding the Cloud/Deployment and CI/CD
+  Pipeline diagram pages
 - `02-estimation-plan.md` — effort estimation
 - `03-dar-plan.md` — Decision Analysis & Resolution
 - `04-poc-plan.md` — the detailed, phase-by-phase POC build plan this code implements
+
+The resulting architecture deliverables live in `docs/sad/`:
+
+- `solution-approach-document.md` — the full Solution Approach Document (SAD)
+- `architecture-diagram.drawio.xml` — the seven-page companion diagram set (draw.io / diagrams.net
+  source)
