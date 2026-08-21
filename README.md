@@ -120,7 +120,10 @@ insurance-portal/
 │  └─ frontend/
 │     ├─ customer-portal/        # React SPA for customers
 │     └─ internal-portal/        # React SPA for internal staff
-├─ plans/                        # SAD, estimation, DAR, and POC implementation plans
+├─ docs/
+│  ├─ dar/                       # Decision/architecture rationale docs
+│  ├─ estimation/                # Estimation spreadsheet
+│  └─ sad/                       # Solution Approach Document + diagrams
 ├─ requirements/                 # original assignment / requirement documents
 └─ .env.example                  # root environment template for Docker Compose
 ```
@@ -371,7 +374,7 @@ max file size, allowed MIME types, cache TTL, log level).
 ## Scope & limitations
 
 This is a **POC**. The following are intentionally out of scope and deferred to a full
-implementation (see `plans/` for the architecture and rationale):
+implementation (see `docs/sad/` for the architecture and rationale):
 
 - Payment integration (Stripe) — stubbed endpoint only
 - Real SMS / email delivery — notifications are logged and persisted, not sent
@@ -386,20 +389,11 @@ implementation (see `plans/` for the architecture and rationale):
 ---
 
 ## Documentation
-
-The `plans/` directory contains the supporting engineering documents:
-
-- `01-sad-plan.md` — Software Architecture Document plan
-- `01.1-architecture-diagrams-plan.md` — amendment adding the System Context, High Level Solution
-  and Logical Architecture diagram pages
-- `01.2-cloud-architecture-diagram-plan.md` — amendment adding the Cloud/Deployment and CI/CD
-  Pipeline diagram pages
-- `02-estimation-plan.md` — effort estimation
-- `03-dar-plan.md` — Decision Analysis & Resolution
-- `04-poc-plan.md` — the detailed, phase-by-phase POC build plan this code implements
-
 The resulting architecture deliverables live in `docs/sad/`:
 
 - `solution-approach-document.md` — the full Solution Approach Document (SAD)
 - `architecture-diagram.drawio.xml` — the seven-page companion diagram set (draw.io / diagrams.net
   source)
+- `diagrams/` — exported JPEG renders of each diagram page (Bounded Contexts, System Context,
+  High Level Solution, Logical Architecture, Layered Solution Architecture, Cloud/Deployment
+  Architecture, CI/CD Pipeline)
