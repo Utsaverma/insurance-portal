@@ -94,6 +94,14 @@ eClaims is delivered as a set of loosely-coupled, independently-deployable servi
 | 5 | **Reporting Module** | Role-based reports — claims processed, processing time, ageing matrix for long-pending claims, fraud reports, and cross-region management KPIs. |
 | 6 | **Document Management** | A central, versioned archive of every claim document and communication, retained for auditing and compliance. |
 
+![System Context](diagrams/System%20Context.jpg)
+
+*Figure — System Context: eClaims as a single black box against every actor and external system that touches it (Appendix B, page 1).*
+
+![High Level Solution](diagrams/High%20Level%20Solution.jpg)
+
+*Figure — High Level Solution: a single compact view of the entire solution, with the end-to-end claim flow numbered on the edges (Appendix B, page 2).*
+
 The platform is designed around a **governed claim lifecycle** (Submitted → Assigned → Under Survey → Surveyed → Under Adjudication → Approved / Rejected → Paid), where each transition is permitted only for the correct role and only from a valid preceding state. Every transition raises a domain **event**, which in turn drives notifications, downstream processing and the analytics feed — the mechanism that makes the whole process transparent and near-real-time.
 
 ---
@@ -101,6 +109,10 @@ The platform is designed around a **governed claim lifecycle** (Submitted → As
 ## 4. Detailed Solution Architecture — Six-Layer Microservices on AWS
 
 eClaims follows a **layered, microservices reference architecture** deployed on **AWS ECS Fargate** (serverless containers) across multiple Availability Zones. The layering separates concerns cleanly, enabling independent scaling, evolution and reuse — a core YCompany design requirement. The companion diagram (`architecture-diagram.drawio.xml`) renders all six layers, the components in each, and the protocol-annotated data flows between them. The companion file also carries a System Context, a High Level Solution and a technology-agnostic Logical Architecture view ahead of this layered detail, and a Cloud / Deployment Architecture view immediately after it translating these six layers into a physical AWS network topology — VPC, Availability Zones, subnets and edge — followed by a dedicated CI/CD Pipeline view (Appendix B).
+
+![Logical Architecture](diagrams/Logical%20Architecture.jpg)
+
+*Figure — Logical Architecture: a technology-agnostic, layered view naming roles rather than products, so it applies equally to the cloud or on-premise deployment option (Appendix B, page 3).*
 
 **Architecture at a glance**
 
@@ -112,6 +124,10 @@ Layer 4  Async / Messaging      EventBridge · SQS · SNS · Lambda
 Layer 5  Data (Polyglot)        PostgreSQL · MongoDB · Redis · OpenSearch · S3 · Redshift
 Layer 6  Infrastructure         IAM/SSO · KMS · CloudWatch/X-Ray · CloudTrail · CI/CD · Terraform
 ```
+
+![Layered Solution Architecture](diagrams/Layered%20Solution%20Architecture.jpg)
+
+*Figure — Layered Solution Architecture: all six layers, their components, and protocol-annotated data flows between them (Appendix B, page 4).*
 
 ### Layer 1 — Client / Edge
 
@@ -205,6 +221,10 @@ endpoints. Only the NAT Gateways carry egress to the external SaaS providers alr
 page 1 (**D1–D5**, **E1**, and the still-unconfirmed Policy Administration System, **E3**). The
 release workflow that deploys into this runtime is detailed separately on page 6 (below).
 
+![Cloud / Deployment Architecture](diagrams/Cloud%20_%20Deployment%20Architecture.jpg)
+
+*Figure — Cloud / Deployment Architecture: the Phase 1 single-Region, Multi-AZ AWS network topology (Appendix B, page 5).*
+
 ### CI/CD Pipeline
 
 The diagram's sixth page, **CI/CD Pipeline** (`eclaims-cicd`), details the release workflow Layer 6
@@ -219,6 +239,10 @@ provisions a Green Fargate task set (**P11**) alongside the current Blue set (**
 Service (**P9**) shown on the Cloud/Deployment page, shifting ALB traffic (**P8**) gradually and
 rolling back automatically on a CloudWatch (**R1**) health alarm — the mechanism behind the
 zero-downtime NFR in §7.
+
+![CI/CD Pipeline](diagrams/CI_CD%20Pipeline.jpg)
+
+*Figure — CI/CD Pipeline: the CodePipeline/CodeBuild/CodeDeploy/ECR release workflow, including the blue-green deploy stage (Appendix B, page 6).*
 
 ---
 
@@ -237,6 +261,10 @@ zero-downtime NFR in §7.
 | **Car Rental Partner** | Partner Portal | Publish rental-vehicle catalogue, confirm bookings |
 
 Access for every role is enforced by the **User / RBAC Service** and is **configurable without code changes**, satisfying the functional requirement for role behaviour to be reconfigured administratively.
+
+![Bounded Contexts (Domain View)](diagrams/Bounded%20Contexts%20(Domain%20View).jpg)
+
+*Figure — Bounded Contexts: the Customer, Internal and Partner domains and the event backbone that integrates them (Appendix B, page 7).*
 
 ---
 
