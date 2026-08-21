@@ -28,7 +28,7 @@ async def update_me(
 
 @router.get("/all", response_model=list[UserResponse])
 async def get_all_users(
-    _: User = Depends(require_role("CASE_MANAGER", "REGIONAL_MANAGER")),
+    _: User = Depends(require_role("CASE_MANAGER", "REGIONAL_MANAGER", "SURVEYOR", "ADJUSTOR")),
     db: AsyncSession = Depends(get_db),
 ):
     from sqlalchemy import select

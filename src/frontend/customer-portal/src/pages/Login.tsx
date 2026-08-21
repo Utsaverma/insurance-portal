@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { login as apiLogin } from '../api/auth'
+import { Alert, Button, Card, CardBody, Input, Logo } from '../components/ui'
 
 export function Login() {
   const { login, isAuthenticated } = useAuth()
@@ -29,40 +30,56 @@ export function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-12">
-      <div className="w-full max-w-md bg-white rounded-xl border border-gray-200 shadow-sm p-8">
-        <h1 className="text-2xl font-semibold text-gray-900 mb-2">eClaims</h1>
-        <p className="text-sm text-gray-500 mb-6">Sign in to your account</p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          {error && <p className="text-sm text-red-500">{error}</p>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white text-sm font-medium rounded-md transition-colors disabled:cursor-not-allowed"
-          >
-            {loading ? 'Signing in…' : 'Sign In'}
-          </button>
-        </form>
+    // min-h-dvh rather than min-h-screen: 100vh is clipped by the iOS Safari
+    // toolbar, dvh is not.
+    <div className="min-h-dvh bg-app">
+      <div className="mx-auto grid min-h-dvh max-w-content-lg items-center gap-10 px-4 py-12 lg:grid-cols-2 lg:gap-16">
+        {/* Brand panel — decorative, so it stays out of the way on mobile. */}
+        <div className="hidden lg:block">
+          <Logo className="h-12 w-12 text-brand-600" />
+          <h2 className="mt-6 text-3xl font-semibold tracking-tight text-fg">
+            Your claims, start to finish.
+          </h2>
+          <p className="mt-3 max-w-sm text-sm leading-relaxed text-fg-muted">
+            Submit a claim, attach supporting documents and follow every status
+            change — all in one place.
+          </p>
+        </div>
+
+        <Card className="w-full justify-self-center sm:max-w-md">
+          <CardBody size="lg">
+            <div className="mb-6 flex items-center gap-2">
+              <Logo className="h-7 w-7 text-brand-600 lg:hidden" />
+              <div>
+                <h1 className="text-2xl font-semibold text-fg">eClaims</h1>
+                <p className="text-sm text-fg-muted">Sign in to continue</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <Input
+                label="Email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+              <Input
+                label="Password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+              {error && <Alert tone="danger">{error}</Alert>}
+              <Button type="submit" size="lg" fullWidth loading={loading}>
+                {loading ? 'Signing in…' : 'Sign In'}
+              </Button>
+            </form>
+          </CardBody>
+        </Card>
       </div>
     </div>
   )

@@ -31,16 +31,6 @@ class UserLoginRequest(BaseModel):
     password: str
 
 
-class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-
-
-class RefreshRequest(BaseModel):
-    refresh_token: str
-
-
 class UserResponse(BaseModel):
     id: uuid.UUID
     email: str
@@ -50,6 +40,20 @@ class UserResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    # Additive: create_token_pair() already holds the User ORM object, so
+    # embedding it costs zero extra queries and removes the post-login round
+    # trip. The default keeps every existing constructor and client valid.
+    user: UserResponse | None = None
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 
 class UserUpdateRequest(BaseModel):

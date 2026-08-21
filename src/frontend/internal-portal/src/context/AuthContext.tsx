@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useCallback } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { AuthUser, UserRole } from '../types'
+import type { AuthUser } from '../types'
+import { profileToUser, tokenToUser } from '../lib/user'
 
 interface AuthContextValue {
   currentUser: AuthUser | null
@@ -11,25 +12,6 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-function decodePayload(token: string): Record<string, string> {
-  try {
-    return JSON.parse(atob(token.split('.')[1]))
-  } catch {
-    return {}
-  }
-}
-
-function tokenToUser(token: string): AuthUser | null {
-  const p = decodePayload(token)
-  if (!p.sub) return null
-  return {
-    id: p.sub,
-    email: p.email ?? '',
-    name: p.full_name ?? p.email ?? '',
-    role: (p.role as UserRole) ?? 'AUDITOR',
-  }
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const stored = localStorage.getItem('internal_token')
@@ -37,11 +19,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     stored ? tokenToUser(stored) : null
   )
 
+  // Reconcile against the authoritative profile once per boot. This picks up a
+  // name changed via PATCH /users/me since the token was minted, and doubles as
+  // an early token-validity check. Failures are swallowed: the axios 401
+  // interceptor in api/client.ts already handles expiry. Boot-only: login()
+  // below already stores the authoritative profile from the login response.
+  useEffect(() => {
+    if (!localStorage.getItem('internal_token')) return
+    let cancelled = false
+    import('../api/auth')
+      .then(({ me }) => me())
+      .then((profile) => {
+        if (!cancelled) setCurrentUser(profileToUser(profile))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const login = useCallback(async (email: string, password: string) => {
     const { loginApi } = await import('../api/auth')
     const data = await loginApi(email, password)
     localStorage.setItem('internal_token', data.access_token)
-    const user = tokenToUser(data.access_token)
+    // Prefer the embedded profile when present; fall back to the token claims.
+    const user = data.user ? profileToUser(data.user) : tokenToUser(data.access_token)
     setCurrentUser(user)
     navigate('/dashboard')
   }, [navigate])

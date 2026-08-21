@@ -22,6 +22,16 @@ export interface AuthUser {
   role: UserRole
 }
 
+/** Exactly what GET /users/me and the login response's `user` object return. */
+export interface UserProfileResponse {
+  id: string
+  email: string
+  full_name: string | null
+  role: UserRole
+  is_active: boolean
+  created_at: string
+}
+
 export interface Claim {
   id: string
   claim_number: string

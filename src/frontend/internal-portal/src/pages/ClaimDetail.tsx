@@ -1,15 +1,29 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
+import { FileQuestion } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { getClaim, listDocuments } from '../api/claims'
 import { ClaimStatusBadge } from '../components/ClaimStatusBadge'
 import { StatusActionPanel } from '../components/StatusActionPanel'
 import { ClaimDocumentViewer } from '../components/ClaimDocumentViewer'
+import { CONTENT_WIDTH } from '../components/layout/shell'
+import { formatINR, formatDate } from '../lib/format'
+import {
+  Avatar,
+  Card,
+  CardBody,
+  CardTitle,
+  EmptyState,
+  LoadingBlock,
+  PageContainer,
+  PageHeader,
+  SectionHeading,
+  StatCard,
+} from '../components/ui'
 import type { Claim, ClaimDocument } from '../types'
 
 export function ClaimDetail() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
   const { currentUser } = useAuth()
   const [claim, setClaim] = useState<Claim | null>(null)
   const [docs, setDocs] = useState<ClaimDocument[]>([])
@@ -25,62 +39,91 @@ export function ClaimDetail() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  if (loading) return <div className="p-10 text-sm text-gray-500">Loading…</div>
-  if (!claim) return <div className="p-10 text-sm text-gray-500">Claim not found.</div>
+  // These early returns used to bypass all page chrome. Inside AppShell the
+  // header survives, but they still need a container or the body looks broken.
+  if (loading) {
+    return (
+      <PageContainer width={CONTENT_WIDTH}>
+        <LoadingBlock />
+      </PageContainer>
+    )
+  }
+  if (!claim) {
+    return (
+      <PageContainer width={CONTENT_WIDTH}>
+        <EmptyState
+          icon={<FileQuestion aria-hidden className="h-8 w-8" />}
+          title="Claim not found."
+          description="It may have been removed, or you may not have access to it."
+        />
+      </PageContainer>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-6xl mx-auto px-4 py-8 md:px-8">
-        <button
-          onClick={() => navigate('/dashboard')}
-          className="mb-5 text-sm text-blue-600 hover:text-blue-800 font-medium"
-        >
-          ← Back to Queue
-        </button>
+    <PageContainer width={CONTENT_WIDTH}>
+      <PageHeader
+        title={claim.claim_number}
+        backTo="/dashboard"
+        backLabel="Back to Queue"
+        meta={<ClaimStatusBadge status={claim.status} />}
+      />
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
-          <h1 className="text-xl font-semibold text-gray-900">{claim.claim_number}</h1>
-          <ClaimStatusBadge status={claim.status} />
+      {claim.assigned_to && currentUser?.role !== 'AUDITOR' && (
+        <div className="mb-4 flex items-center gap-2 text-sm text-fg-muted">
+          <Avatar name={claim.assigned_staff_name} seed={claim.assigned_to} size="sm" />
+          <span>Assigned to {claim.assigned_staff_name ?? 'staff member'}</span>
+        </div>
+      )}
+
+      {/* lg, not md: at 768px a one-third rail is ~230px, too narrow for the
+          panel's buttons + textarea + select, so tablets stay single-column. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* Action rail first in DOM order on mobile — a surveyor's primary
+            action was previously three screens below the stat tiles, the
+            description card and the document list.
+            top-20 (5rem) must track the header: h-16 (4rem) + 1rem of air. */}
+        <div className="order-1 lg:order-2 lg:sticky lg:top-20 lg:self-start">
+          {currentUser && (
+            <StatusActionPanel
+              claim={claim}
+              role={currentUser.role}
+              onActionComplete={loadData}
+            />
+          )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="md:col-span-2 space-y-6">
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                ['Policy', claim.policy_number],
-                ['Incident Date', claim.incident_date],
-                ['Claimed Amount', `₹${Number(claim.claimed_amount).toLocaleString('en-IN')}`],
-                ['Submitted', new Date(claim.created_at).toLocaleDateString()],
-              ].map(([label, value]) => (
-                <div key={label} className="p-4 bg-white border border-gray-200 rounded-xl">
-                  <div className="text-xs text-gray-500 mb-1">{label}</div>
-                  <div className="text-sm font-semibold text-gray-900">{value}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="bg-white border border-gray-200 rounded-xl p-5">
-              <h2 className="text-sm font-semibold text-gray-700 mb-2">Incident Description</h2>
-              <p className="text-sm text-gray-700 leading-relaxed">{claim.incident_description}</p>
-            </div>
-
-            <div>
-              <h2 className="text-sm font-semibold text-gray-700 mb-3">Documents</h2>
-              <ClaimDocumentViewer claimId={claim.id} documents={docs} />
-            </div>
+        <div className="order-2 space-y-8 lg:order-1 lg:col-span-2">
+          <div className="grid grid-cols-2 gap-3">
+            <StatCard label="Policy" value={claim.policy_number} size="sm" />
+            <StatCard label="Incident Date" value={formatDate(claim.incident_date)} size="sm" numeric />
+            <StatCard
+              label="Claimed Amount"
+              value={formatINR(claim.claimed_amount)}
+              size="sm"
+              numeric
+            />
+            <StatCard
+              label="Submitted"
+              value={formatDate(claim.created_at)}
+              size="sm"
+              numeric
+            />
           </div>
 
+          <Card>
+            <CardBody>
+              <CardTitle className="mb-2">Incident Description</CardTitle>
+              <p className="text-sm leading-relaxed text-fg">{claim.incident_description}</p>
+            </CardBody>
+          </Card>
+
           <div>
-            {currentUser && (
-              <StatusActionPanel
-                claim={claim}
-                role={currentUser.role}
-                onActionComplete={loadData}
-              />
-            )}
+            <SectionHeading>Documents</SectionHeading>
+            <ClaimDocumentViewer claimId={claim.id} documents={docs} />
           </div>
         </div>
       </div>
-    </div>
+    </PageContainer>
   )
 }

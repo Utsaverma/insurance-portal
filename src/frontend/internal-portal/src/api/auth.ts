@@ -1,10 +1,12 @@
 import apiClient from './client'
-import type { AuthUser } from '../types'
+import type { UserProfileResponse } from '../types'
 
 interface LoginResponse {
   access_token: string
   refresh_token: string
   token_type: string
+  /** Additive since the auth-service embeds the user in the token response. */
+  user?: UserProfileResponse | null
 }
 
 export async function loginApi(email: string, password: string): Promise<LoginResponse> {
@@ -12,7 +14,9 @@ export async function loginApi(email: string, password: string): Promise<LoginRe
   return res.data
 }
 
-export async function me(): Promise<AuthUser> {
-  const res = await apiClient.get<AuthUser>('/users/me')
+/** Typed to the real endpoint shape — it returns `full_name`, not `name`.
+ *  Callers map it through profileToUser(). */
+export async function me(): Promise<UserProfileResponse> {
+  const res = await apiClient.get<UserProfileResponse>('/users/me')
   return res.data
 }

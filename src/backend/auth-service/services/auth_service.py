@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 from jose import JWTError, ExpiredSignatureError, jwt
 
 from config import settings
-from models.schemas import TokenResponse
+from models.schemas import TokenResponse, UserResponse
 
 
 def hash_password(plain: str) -> str:
@@ -37,11 +37,26 @@ def decode_jwt(token: str) -> dict:
 
 def create_token_pair(user) -> TokenResponse:
     access = create_jwt(
-        {"sub": str(user.id), "email": user.email, "role": user.role, "type": "access"},
+        {
+            "sub": str(user.id),
+            "email": user.email,
+            "role": user.role,
+            # None serialises to JSON null; clients fall back to the email.
+            # "" would silently defeat a ?? check, null does not.
+            "full_name": user.full_name,
+            "type": "access",
+        },
         timedelta(minutes=settings.access_token_expire_minutes),
     )
+    # The refresh token is a 7-day credential and deliberately carries no PII.
+    # Fresh access tokens are minted from the DB on refresh, so the claim
+    # un-stales itself naturally.
     refresh = create_jwt(
         {"sub": str(user.id), "type": "refresh"},
         timedelta(days=settings.refresh_token_expire_days),
     )
-    return TokenResponse(access_token=access, refresh_token=refresh)
+    return TokenResponse(
+        access_token=access,
+        refresh_token=refresh,
+        user=UserResponse.model_validate(user),
+    )

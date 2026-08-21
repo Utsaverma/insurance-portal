@@ -1,0 +1,106 @@
+{
+  "$comment": "Seeded demo accounts for the eClaims insurance portal PoC. Generated from infrastructure/db/init.sql. NOT for production use.",
+  "source": "infrastructure/db/init.sql",
+  "sharedPassword": "Test1234!",
+  "portals": {
+    "customerPortal": {
+      "url": "http://localhost:3000",
+      "allowedRoles": ["CUSTOMER"]
+    },
+    "internalPortal": {
+      "url": "http://localhost:3001",
+      "allowedRoles": [
+        "ADJUSTOR",
+        "SURVEYOR",
+        "CASE_MANAGER",
+        "AUDITOR",
+        "REGIONAL_MANAGER"
+      ],
+      "notes": "The assignment route (/claims/:id/assign) is restricted to CASE_MANAGER and REGIONAL_MANAGER."
+    }
+  },
+  "services": {
+    "authService": "http://localhost:8001/docs",
+    "claimsService": "http://localhost:8002/docs"
+  },
+  "accounts": [
+    {
+      "email": "customer@test.com",
+      "password": "Test1234!",
+      "role": "CUSTOMER",
+      "fullName": "Alice Customer",
+      "portal": "customerPortal",
+      "capabilities": [
+        "Submit a new claim",
+        "List and view own claims only",
+        "Upload claim documents"
+      ]
+    },
+    {
+      "email": "casemanager@test.com",
+      "password": "Test1234!",
+      "role": "CASE_MANAGER",
+      "fullName": "David Case",
+      "portal": "internalPortal",
+      "capabilities": [
+        "View all claims",
+        "Assign a SUBMITTED claim to a surveyor (SUBMITTED -> ASSIGNED)",
+        "Override any status transition"
+      ]
+    },
+    {
+      "email": "surveyor@test.com",
+      "password": "Test1234!",
+      "role": "SURVEYOR",
+      "fullName": "Carol Surveyor",
+      "portal": "internalPortal",
+      "capabilities": [
+        "ASSIGNED -> UNDER_SURVEY (start survey)",
+        "UNDER_SURVEY -> SURVEYED (submit assessment)"
+      ]
+    },
+    {
+      "email": "adjuster@test.com",
+      "password": "Test1234!",
+      "role": "ADJUSTOR",
+      "fullName": "Bob Adjuster",
+      "portal": "internalPortal",
+      "capabilities": [
+        "SURVEYED -> UNDER_ADJUDICATION (begin adjudication)",
+        "UNDER_ADJUDICATION -> APPROVED or REJECTED",
+        "APPROVED -> PAID"
+      ]
+    },
+    {
+      "email": "auditor@test.com",
+      "password": "Test1234!",
+      "role": "AUDITOR",
+      "fullName": "Eve Auditor",
+      "portal": "internalPortal",
+      "capabilities": [
+        "Read-only: view all claims and status history",
+        "No status transitions defined for this role"
+      ]
+    },
+    {
+      "email": "manager@test.com",
+      "password": "Test1234!",
+      "role": "REGIONAL_MANAGER",
+      "fullName": "Frank Manager",
+      "portal": "internalPortal",
+      "capabilities": [
+        "View all claims",
+        "Access the assignment route",
+        "No status transitions defined for this role"
+      ]
+    }
+  ],
+  "walkthrough": [
+    "customer@test.com (customer portal) - submit a claim",
+    "casemanager@test.com (internal portal) - assign the claim to a surveyor",
+    "surveyor@test.com - start survey, then submit assessment",
+    "adjuster@test.com - begin adjudication, then approve with an amount",
+    "customer@test.com - claim now shows APPROVED"
+  ],
+  "registration": "Self-registrations through the customer portal always receive the CUSTOMER role."
+}

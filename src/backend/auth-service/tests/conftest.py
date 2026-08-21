@@ -18,21 +18,44 @@ CANNED_EMAIL = "test@example.com"
 CANNED_PASSWORD = "Password1!"
 
 
-@pytest_asyncio.fixture(scope="session", autouse=True)
+@pytest_asyncio.fixture(autouse=True)
 async def create_test_tables():
-    async with TEST_ENGINE.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield
+    """Rebuild the schema per test.
+
+    The repositories call session.commit(), which ends the enclosing SAVEPOINT,
+    so a begin_nested()/rollback() sandwich gave no isolation: SQLAlchemy pools
+    a sqlite ':memory:' engine onto a single connection, so committed rows
+    leaked into every later test and the `registered_user` fixture started
+    returning 409. Dropping and recreating is cheap for an in-memory DB.
+    """
     async with TEST_ENGINE.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """The login limiter is a process-global in-memory store keyed by IP.
+
+    Without this, every test that ran after test_rate_limit_on_login got a 429
+    from /auth/login and failed with KeyError: 'access_token'.
+    """
+    import main
+    from api.routers import auth as auth_router
+
+    for limiter in (main.limiter, auth_router.limiter):
+        try:
+            limiter.reset()
+        except NotImplementedError:  # storage backend without reset support
+            pass
+    yield
 
 
 @pytest_asyncio.fixture
 async def db_session():
     async with TestSessionLocal() as session:
-        await session.begin_nested()
         yield session
-        await session.rollback()
 
 
 @pytest_asyncio.fixture

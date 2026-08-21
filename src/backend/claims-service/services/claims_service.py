@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from models.db_models import ClaimStatus
-from models.schemas import StatusUpdateRequest, UserContext
+from models.schemas import AssignRequest, StatusUpdateRequest, UserContext
 from repositories.claim_repository import ClaimRepository
 from services.notification_service import send_notification
 
@@ -54,6 +54,38 @@ async def update_status(
         message=f"Claim {updated.claim_number} status changed to {req.status}",
         db=db,
     )
+    return updated
+
+
+async def assign_claim(
+    claim_id: uuid.UUID,
+    req: AssignRequest,
+    user: UserContext,
+    db: AsyncSession,
+    redis_client: aioredis.Redis,
+) -> object:
+    repo = ClaimRepository(db)
+    claim = await repo.get_by_id(claim_id)
+    if not claim:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found")
+    new_status = None
+    if claim.status == ClaimStatus.SUBMITTED:
+        if user.role != "CASE_MANAGER":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only case managers can assign a submitted claim",
+            )
+        new_status = ClaimStatus.ASSIGNED
+    updated = await repo.assign(claim, req.assigned_to, user.id, new_status)
+    if new_status is not None:
+        await redis_client.delete(f"claim:{claim_id}:status")
+        await send_notification(
+            claim_id=claim_id,
+            recipient_id=updated.customer_id,
+            channel="internal",
+            message=f"Claim {updated.claim_number} status changed to {new_status}",
+            db=db,
+        )
     return updated
 
 

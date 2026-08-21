@@ -37,7 +37,20 @@ async def get_current_user(
     if not resp.is_success:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Auth service error")
     data = resp.json()
-    return UserContext(id=uuid.UUID(data["id"]), email=data["email"], role=data["role"])
+    # .get, not [...], so an auth-service response predating the full_name
+    # field cannot 500 the claims-service.
+    return UserContext(
+        id=uuid.UUID(data["id"]),
+        email=data["email"],
+        role=data["role"],
+        full_name=data.get("full_name"),
+    )
+
+
+async def get_bearer_token(
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+) -> str:
+    return credentials.credentials
 
 
 def require_role(*roles: str):

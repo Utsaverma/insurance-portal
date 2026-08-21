@@ -30,7 +30,13 @@ async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
     hashed = hash_password(body.password)
-    user = await repo.create(body.email, hashed, body.full_name, role="CUSTOMER")
+    # infrastructure/db/init.sql declares full_name TEXT NOT NULL while the ORM
+    # model has nullable=True, so a registration without a name raised
+    # NotNullViolationError -> unhandled 500 against Postgres (the SQLite test
+    # DB built from Base.metadata could not see it). Default to the email local
+    # part rather than editing init.sql, which only runs on an empty volume.
+    full_name = (body.full_name or "").strip() or body.email.split("@")[0]
+    user = await repo.create(body.email, hashed, full_name, role="CUSTOMER")
     return UserResponse.model_validate(user)
 
 

@@ -2,8 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover is what makes env(safe-area-inset-*) non-zero on
+         notched iOS, which the sticky header and mobile drawer both rely on. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Track and submit your insurance claims — eClaims Customer Portal." />
+    <meta name="theme-color" content="#f9fafb" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="mask-icon" href="/favicon.svg" color="#2563eb" />
     <title>eClaims — Customer Portal</title>
+    <!-- No defer: must run before first paint to avoid a light flash.
+         External + same-origin because the CSP is script-src 'self'. -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>
