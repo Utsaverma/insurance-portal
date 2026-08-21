@@ -73,6 +73,28 @@ class ClaimRepository:
         await self.db.refresh(claim)
         return claim
 
+    async def assign(
+        self,
+        claim: Claim,
+        assigned_to: uuid.UUID,
+        changed_by: uuid.UUID,
+        new_status: Optional[ClaimStatus],
+    ) -> Claim:
+        claim.assigned_to = assigned_to
+        if new_status is not None:
+            history = ClaimStatusHistory(
+                claim_id=claim.id,
+                from_status=claim.status,
+                to_status=new_status,
+                changed_by=changed_by,
+                note=f"Assigned to {assigned_to}",
+            )
+            claim.status = new_status
+            self.db.add(history)
+        await self.db.flush()
+        await self.db.refresh(claim)
+        return claim
+
     async def get_history(self, claim_id: uuid.UUID) -> list[ClaimStatusHistory]:
         result = await self.db.execute(
             select(ClaimStatusHistory)

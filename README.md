@@ -305,12 +305,36 @@ echo "VITE_API_BASE_URL=http://localhost:8000" > .env.local   # or your proxy ta
 npm run dev     # customer-portal → :3000, internal-portal → :3001
 ```
 
+#### Shared design tokens
+
+The design tokens and the pre-paint theme bootstrap are **duplicated byte-for-byte** in both
+portals rather than imported from a shared path. This is deliberate: `docker-compose.yml` sets each
+portal directory as its own build `context:`, so a file above the context is not copied into the
+image — a shared import would build fine on the host and fail inside the image. (`ClaimStatusBadge.tsx`
+is already duplicated this way, so this is the established convention here.)
+
+After touching any shared file, run the drift check — it must exit 0:
+
+```bash
+bash src/frontend/check-shared.sh
+```
+
+It walks the full shared set (design tokens, `ui/*` primitives, `layout/{AppShell,Header,MobileNav,ThemeToggle,UserMenu}.tsx`, `ThemeContext.tsx`, `lib/{cn,initials,theme,format}.ts`, `DocumentList.tsx`) and fails loudly on any unexpected difference, with an explicit allowlist for the files that legitimately differ per portal (`nav.ts`, `layout/shell.ts`, `pages/Login.tsx`, `index.html`, `main.tsx`, `ui/index.ts`, `ClaimStatusBadge.tsx`, `lib/user.ts`).
+
+Two rules that are easy to break and only fail in the production build:
+
+- **Never interpolate a Tailwind class name.** The content scanner is a regex over source text, so
+  ``className={`bg-status-${key}-soft`}`` emits no CSS at all. Every variant class must appear as a
+  complete literal string in a static map.
+- **Colour tokens are space-separated RGB channels, not hex.** `bg-surface/85` + `backdrop-blur` on
+  the sticky header depends on it; a hex value silently breaks every opacity modifier.
+
 ---
 
 ## Running the tests
 
 ```bash
-# Auth service — 10 tests
+# Auth service — 14 tests
 cd src/backend/auth-service && pytest -v
 
 # Claims service — 14 tests

@@ -27,6 +27,11 @@ export const updateClaimStatus = async (id: string, body: StatusUpdateBody): Pro
   return res.data
 }
 
+export const assignClaim = async (id: string, assignedTo: string): Promise<Claim> => {
+  const res = await apiClient.post<Claim>(`/claims/${id}/assign`, { assigned_to: assignedTo })
+  return res.data
+}
+
 export const listDocuments = async (claimId: string): Promise<ClaimDocument[]> => {
   const res = await apiClient.get<ClaimDocument[]>(`/claims/${claimId}/documents`)
   return res.data

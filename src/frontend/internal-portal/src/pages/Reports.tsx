@@ -1,11 +1,37 @@
 import React, { useEffect, useState, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { listClaims } from '../api/claims'
 import { ClaimStatusBadge } from '../components/ClaimStatusBadge'
+import { CONTENT_WIDTH } from '../components/layout/shell'
+import { formatINR } from '../lib/format'
+import {
+  Cell,
+  HeaderCell,
+  LoadingBlock,
+  PageContainer,
+  PageHeader,
+  Row,
+  StatCard,
+  TableBody,
+  TableEmpty,
+  TableHead,
+  TableRoot,
+} from '../components/ui'
 import type { Claim } from '../types'
 
+/* Priority column hiding rather than a card-stack — a deliberate difference
+   from ClaimsTable. Reports is an analyst screen and comparison-oriented; five
+   columns x N rows rendered as cards is unreadable.
+   The className must land on the <th> AND the <td>, which is why the header is
+   an array of objects rather than the bare string array it used to be. */
+const COLUMNS = [
+  { label: 'Claim #', className: '' },
+  { label: 'Policy', className: 'hidden sm:table-cell' },
+  { label: 'Status', className: '' },
+  { label: 'Claimed', className: '' },
+  { label: 'Processing (days)', className: 'hidden md:table-cell' },
+]
+
 export function Reports() {
-  const navigate = useNavigate()
   const [claims, setClaims] = useState<Claim[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -26,67 +52,68 @@ export function Reports() {
     return { byStatus, totalApproved, avgProcessingDays }
   }, [claims])
 
-  const fmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
-
-  if (loading) return <div className="p-10 text-sm text-gray-500">Loading…</div>
+  if (loading) {
+    return (
+      <PageContainer width={CONTENT_WIDTH}>
+        <LoadingBlock />
+      </PageContainer>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-5xl mx-auto px-4 py-8 md:px-8">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-xl font-semibold text-gray-900">Claims Reports</h1>
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-          >
-            ← Back to Queue
-          </button>
-        </div>
+    <PageContainer width={CONTENT_WIDTH}>
+      <PageHeader title="Claims Reports" subtitle={`${claims.length} claims in scope`} />
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-8">
-          {Object.entries(stats.byStatus).map(([status, count]) => (
-            <div key={status} className="p-4 bg-white border border-gray-200 rounded-xl">
-              <div className="text-xs text-gray-500 mb-1">{status.replace(/_/g, ' ')}</div>
-              <div className="text-2xl font-bold text-gray-900">{count}</div>
-            </div>
-          ))}
-          <div className="p-4 bg-green-50 border border-green-200 rounded-xl col-span-2 sm:col-span-1">
-            <div className="text-xs text-gray-500 mb-1">Total Approved Amount</div>
-            <div className="text-lg font-bold text-green-700">{fmt.format(stats.totalApproved)}</div>
-          </div>
-          <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl col-span-2 sm:col-span-1">
-            <div className="text-xs text-gray-500 mb-1">Avg Processing (days)</div>
-            <div className="text-2xl font-bold text-blue-700">{stats.avgProcessingDays.toFixed(1)}</div>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="bg-gray-50 text-left">
-                {['Claim #', 'Policy', 'Status', 'Claimed', 'Processing (days)'].map((h) => (
-                  <th key={h} className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-100">
-              {claims.map((c) => (
-                <tr key={c.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900">{c.claim_number}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{c.policy_number}</td>
-                  <td className="px-4 py-3"><ClaimStatusBadge status={c.status} /></td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{fmt.format(Number(c.claimed_amount))}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
-                    {((Date.now() - new Date(c.created_at).getTime()) / 86400000).toFixed(1)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        {Object.entries(stats.byStatus).map(([status, count]) => (
+          <StatCard key={status} label={status.replace(/_/g, ' ')} value={count} numeric />
+        ))}
+        {/* These two hardcoded bg-green-50 / bg-blue-50, which are unreadable
+            in dark mode. The tone prop resolves to tokens that flip. */}
+        <StatCard
+          label="Total Approved Amount"
+          value={formatINR(stats.totalApproved)}
+          tone="success"
+          size="lg"
+          numeric
+          className="col-span-2 sm:col-span-1"
+        />
+        <StatCard
+          label="Avg Processing (days)"
+          value={stats.avgProcessingDays.toFixed(1)}
+          tone="brand"
+          numeric
+          className="col-span-2 sm:col-span-1"
+        />
       </div>
-    </div>
+
+      <TableRoot>
+        <TableHead>
+          <tr>
+            {COLUMNS.map(({ label, className }) => (
+              <HeaderCell key={label} className={className}>
+                {label}
+              </HeaderCell>
+            ))}
+          </tr>
+        </TableHead>
+        <TableBody>
+          {claims.map((c) => (
+            <Row key={c.id}>
+              <Cell strong>{c.claim_number}</Cell>
+              <Cell className="hidden sm:table-cell">{c.policy_number}</Cell>
+              <Cell><ClaimStatusBadge status={c.status} /></Cell>
+              <Cell numeric>{formatINR(c.claimed_amount)}</Cell>
+              <Cell numeric className="hidden md:table-cell">
+                {((Date.now() - new Date(c.created_at).getTime()) / 86400000).toFixed(1)}
+              </Cell>
+            </Row>
+          ))}
+          {claims.length === 0 && (
+            <TableEmpty colSpan={COLUMNS.length}>No claims found.</TableEmpty>
+          )}
+        </TableBody>
+      </TableRoot>
+    </PageContainer>
   )
 }

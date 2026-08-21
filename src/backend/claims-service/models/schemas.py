@@ -31,6 +31,7 @@ class ClaimResponse(BaseModel):
     claimed_amount: Decimal
     status: ClaimStatus
     assigned_to: uuid.UUID | None
+    assigned_staff_name: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -45,6 +46,10 @@ class ClaimListResponse(BaseModel):
 class StatusUpdateRequest(BaseModel):
     status: ClaimStatus
     note: str | None = None
+
+
+class AssignRequest(BaseModel):
+    assigned_to: uuid.UUID
 
 
 class DocumentResponse(BaseModel):
@@ -76,6 +81,7 @@ class UserContext(BaseModel):
     id: uuid.UUID
     email: str
     role: str
+    full_name: str | None = None
 
 
 class HealthResponse(BaseModel):

@@ -1,3 +1,230 @@
+/* SHARED DESIGN TOKENS — must stay byte-identical between customer-portal and internal-portal.
+   Verify with:  diff src/frontend/{customer,internal}-portal/src/index.css  */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  /* Colors are space-separated RGB channels so Tailwind's <alpha-value> works
+     (bg-surface/85, ring-focus/40, …). Never replace one with a hex string. */
+  :root {
+    --brand-50: 239 246 255;
+    --brand-100: 219 234 254;
+    --brand-200: 191 219 254;
+    --brand-300: 147 197 253;
+    --brand-400: 96 165 250;
+    --brand-500: 59 130 246;
+    --brand-600: 37 99 235;
+    --brand-700: 29 78 216;
+    --brand-800: 30 64 175;
+    --brand-900: 30 58 138;
+
+    --app: 249 250 251;
+    --surface: 255 255 255;
+    --surface-muted: 249 250 251;
+    --surface-hover: 243 244 246;
+
+    --line: 229 231 235;
+    --line-strong: 209 213 219;
+
+    --fg: 17 24 39;
+    --fg-muted: 107 114 128;
+    --fg-subtle: 156 163 175;
+
+    --link: 37 99 235;
+    --link-hover: 29 78 216;
+    --focus: 59 130 246;
+
+    --success-soft: 240 253 244;
+    --success-fg: 21 128 61;
+    --success-line: 187 247 208;
+    --success-solid: 22 163 74;
+    --success-solid-hover: 21 128 61;
+
+    --warning-soft: 254 252 232;
+    --warning-fg: 180 83 9;
+    --warning-line: 253 230 138;
+    --warning-solid: 180 83 9;
+    --warning-solid-hover: 146 64 14;
+
+    --danger-soft: 254 242 242;
+    --danger-fg: 185 28 28;
+    --danger-line: 254 202 202;
+    --danger-solid: 220 38 38;
+    --danger-solid-hover: 185 28 28;
+
+    --info-soft: 239 246 255;
+    --info-fg: 29 78 216;
+    --info-line: 191 219 254;
+    --info-solid: 37 99 235;
+    --info-solid-hover: 29 78 216;
+
+    /* Claim statuses. Light values mirror the pre-token 100/700/300 triplets
+       exactly, so light mode is pixel-identical to the previous build. */
+    --st-submitted-soft: 243 244 246;
+    --st-submitted-fg: 75 85 99;
+    --st-submitted-line: 209 213 219;
+    --st-assigned-soft: 219 234 254;
+    --st-assigned-fg: 29 78 216;
+    --st-assigned-line: 147 197 253;
+    --st-under-survey-soft: 237 233 254;
+    --st-under-survey-fg: 109 40 217;
+    --st-under-survey-line: 196 181 253;
+    --st-surveyed-soft: 204 251 241;
+    --st-surveyed-fg: 15 118 110;
+    --st-surveyed-line: 94 234 212;
+    --st-under-adjudication-soft: 255 237 213;
+    --st-under-adjudication-fg: 194 65 12;
+    --st-under-adjudication-line: 253 186 116;
+    --st-approved-soft: 220 252 231;
+    --st-approved-fg: 21 128 61;
+    --st-approved-line: 134 239 172;
+    --st-rejected-soft: 254 226 226;
+    --st-rejected-fg: 185 28 28;
+    --st-rejected-line: 252 165 165;
+    --st-paid-soft: 254 249 195;
+    --st-paid-fg: 161 98 7;
+    --st-paid-line: 253 224 71;
+
+    --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+    --shadow-card-hover: 0 4px 12px -2px rgb(0 0 0 / 0.1);
+    --shadow-header: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+
+    /* Avatar chips pick a deterministic hue per user; only the saturation and
+       lightness need to flip between themes. See components/ui/Avatar.tsx. */
+    --avatar-s: 55%;
+    --avatar-l: 90%;
+    --avatar-fg-l: 30%;
+
+    color-scheme: light;
+  }
+
+  .dark {
+    --brand-50: 23 37 84;
+    --brand-100: 30 58 138;
+    --brand-200: 30 64 175;
+    --brand-300: 29 78 216;
+    --brand-400: 59 130 246;
+    --brand-500: 96 165 250;
+    --brand-600: 37 99 235;
+    --brand-700: 29 78 216;
+    --brand-800: 147 197 253;
+    --brand-900: 191 219 254;
+
+    --app: 9 9 11;
+    --surface: 24 24 27;
+    --surface-muted: 32 32 36;
+    --surface-hover: 39 39 42;
+
+    --line: 39 39 42;
+    --line-strong: 63 63 70;
+
+    --fg: 244 244 245;
+    --fg-muted: 161 161 170;
+    --fg-subtle: 113 113 122;
+
+    --link: 96 165 250;
+    --link-hover: 147 197 253;
+    --focus: 96 165 250;
+
+    --success-soft: 5 46 22;
+    --success-fg: 134 239 172;
+    --success-line: 22 101 52;
+    --success-solid: 22 163 74;
+    --success-solid-hover: 21 128 61;
+
+    --warning-soft: 66 32 6;
+    --warning-fg: 253 224 71;
+    --warning-line: 133 77 14;
+    --warning-solid: 180 83 9;
+    --warning-solid-hover: 146 64 14;
+
+    --danger-soft: 69 10 10;
+    --danger-fg: 252 165 165;
+    --danger-line: 153 27 27;
+    --danger-solid: 220 38 38;
+    --danger-solid-hover: 185 28 28;
+
+    --info-soft: 23 37 84;
+    --info-fg: 147 197 253;
+    --info-line: 30 64 175;
+    --info-solid: 37 99 235;
+    --info-solid-hover: 29 78 216;
+
+    /* ~950-level fills with 300-level text: every pair clears 4.5:1 against
+       both the dark card surface and the dark page background. */
+    --st-submitted-soft: 39 39 42;
+    --st-submitted-fg: 212 212 216;
+    --st-submitted-line: 82 82 91;
+    --st-assigned-soft: 23 37 84;
+    --st-assigned-fg: 147 197 253;
+    --st-assigned-line: 30 64 175;
+    --st-under-survey-soft: 46 16 101;
+    --st-under-survey-fg: 196 181 253;
+    --st-under-survey-line: 91 33 182;
+    --st-surveyed-soft: 4 47 46;
+    --st-surveyed-fg: 94 234 212;
+    --st-surveyed-line: 17 94 89;
+    --st-under-adjudication-soft: 67 20 7;
+    --st-under-adjudication-fg: 253 186 116;
+    --st-under-adjudication-line: 154 52 18;
+    --st-approved-soft: 5 46 22;
+    --st-approved-fg: 134 239 172;
+    --st-approved-line: 22 101 52;
+    --st-rejected-soft: 69 10 10;
+    --st-rejected-fg: 252 165 165;
+    --st-rejected-line: 153 27 27;
+    --st-paid-soft: 66 32 6;
+    --st-paid-fg: 253 224 71;
+    --st-paid-line: 133 77 14;
+
+    /* Drop shadows read as mud on dark surfaces — use a hairline highlight. */
+    --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.04);
+    --shadow-card-hover: 0 0 0 1px rgb(255 255 255 / 0.08);
+    --shadow-header: 0 1px 0 0 rgb(255 255 255 / 0.04);
+
+    --avatar-s: 40%;
+    --avatar-l: 26%;
+    --avatar-fg-l: 80%;
+
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-app text-fg font-sans antialiased;
+  }
+
+  /* One global focus treatment. The <tr tabIndex={0}> rows in ClaimsTable have
+     a tabindex but no visible focus indicator today — keyboard users navigate
+     the queue blind. This single rule fixes that everywhere. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-focus ring-offset-2 ring-offset-app;
+  }
+
+  /* iOS Safari zooms the viewport on focus for any input under 16px. */
+  input,
+  select,
+  textarea {
+    font-size: 1rem;
+  }
+
+  @media (min-width: 640px) {
+    input,
+    select,
+    textarea {
+      font-size: 0.875rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
