@@ -12,9 +12,9 @@
 | Project | YCompany eClaims — Claims Modernisation Programme |
 | Prepared for | YCompany (Auto Insurance) |
 | Prepared by | Utsav Verma — Senior Staff Engineer, Nagarro |
-| Version | 1.0 |
-| Status | Final — Client Ready |
-| Date | 07 July 2026 |
+| Version | 1.1 |
+| Status | Issued for review |
+| Date | 30 September 2026 |
 | Classification | Confidential |
 | Companion artefact | `docs/sad/architecture-diagram.drawio.xml` (draw.io / diagrams.net source) |
 
@@ -24,6 +24,7 @@
 |---|---|---|---|
 | 0.1 | 30 June 2026 | Utsav Verma | Initial draft — structure and problem framing |
 | 1.0 | 07 July 2026 | Utsav Verma | Complete architecture, NFR pull-out, technology stack, scope — issued for review |
+| 1.1 | 30 September 2026 | Utsav Verma | Added §9 Performance & Scalability; cloud and on-premise deployment options; application-level audit trail; role mapping; POC coverage; references to the DARs and the estimate |
 
 ### Table of contents
 
@@ -35,8 +36,9 @@
 6. [Key Workflows](#6-key-workflows)
 7. [Non-Functional Requirements — Single-Page Pull-Out](#7-non-functional-requirements--single-page-pull-out)
 8. [Technology Stack](#8-technology-stack)
-9. [Assumptions & Scope](#9-assumptions--scope)
-10. [References & Appendix](#10-references--appendix)
+9. [Performance & Scalability](#9-performance--scalability)
+10. [Assumptions & Scope](#10-assumptions--scope)
+11. [References & Appendix](#11-references--appendix)
 
 ---
 
@@ -63,7 +65,7 @@ Underpinning the portals is an **event-driven microservices backend on AWS** tha
 | Data-driven management | Region and enterprise dashboards, ageing matrices, and fraud reporting |
 | Enterprise-grade trust | 24×7 self-healing availability, encryption everywhere, RBAC, and an immutable audit trail |
 
-The architecture is designed to comfortably serve YCompany's 200M+ customer base and future growth, to meet the mandated performance target of **99% of requests completing in under 5,000 ms**, and to satisfy security expectations including the **OWASP Top 10** and encryption of sensitive data at rest and in transit. It supports **both cloud and on-premise deployment** through Infrastructure-as-Code, and is built for evolution, flexibility and reuse in line with YCompany's stated design principles.
+The architecture is designed to comfortably serve YCompany's 200M+ customer base and future growth, to meet the mandated performance target of **99% of requests completing in under 5,000 ms**, and to satisfy security expectations including the **OWASP Top 10** and encryption of sensitive data at rest and in transit. It supports **both cloud and on-premise deployment**: services ship as container images that run on AWS in Phase 1 and on Kubernetes on-premise, with each AWS-managed service mapped to a portable equivalent (§4, Deployment Options). It is built for evolution, flexibility and reuse in line with YCompany's stated design principles.
 
 ---
 
@@ -197,16 +199,17 @@ These platform services govern **every layer above** and provide the non-functio
 - **IAM + SSO (Okta)** — centralised identity and single sign-on.
 - **Secrets Manager + KMS** — secret rotation and AES-256 encryption at rest.
 - **CloudWatch + X-Ray** — structured JSON logs and distributed tracing for debugging any error condition.
-- **CloudTrail** — an immutable audit log of every API call (supports non-repudiation).
+- **CloudTrail** — an immutable log of AWS control-plane and data-access API calls (infrastructure audit).
+- **Application audit trail** — every business action (submission, assignment, assessment, approval, override, payment) is written to an append-only, hash-chained audit store. Each record carries the actor, timestamp, source IP, request ID and the previous record's hash. The trail is archived to S3 with Object Lock (WORM), and every claim document's SHA-256 digest is recorded at upload. This, not CloudTrail, provides business-level non-repudiation.
 - **CodePipeline + CodeBuild + CodeDeploy** — CI/CD with blue-green deployment for zero-downtime releases; container images stored in **Amazon ECR**.
-- **Terraform** — Infrastructure-as-Code, enabling **both on-premise and AWS** deployment from one codebase.
+- **Terraform** — Infrastructure-as-Code for every environment. Terraform versions the infrastructure; it does not make AWS-managed services run on-premise. On-premise portability comes from the container images and the on-premise profile (see *Deployment Options* below).
 - **ECS Fargate** — serverless container orchestration with no EC2 fleet to manage.
 
 ### Deployment Topology
 
 The diagram's fifth page, **Cloud / Deployment Architecture** (`eclaims-cloud`), translates the six
 logical layers above into a physical AWS network topology for **Phase 1: a single AWS Region,
-Multi-AZ** (multi-region active-active is a Phase 2 item, §9). Inbound traffic resolves through
+Multi-AZ** (multi-region active-active is a Phase 2 item, §10). Inbound traffic resolves through
 **Amazon Route 53** (**G1**) and passes through a global edge tier outside the Region — **G2** AWS
 WAF + Shield and **G3** CloudFront — before entering one **Amazon VPC** spread across three
 Availability Zones. Each zone repeats the same three-subnet pattern: a public subnet holding the
@@ -244,6 +247,35 @@ zero-downtime NFR in §7.
 
 *Figure — CI/CD Pipeline: the CodePipeline/CodeBuild/CodeDeploy/ECR release workflow, including the blue-green deploy stage (Appendix B, page 6).*
 
+### Deployment Options — Cloud and On-Premise
+
+The case study requires both on-premise and cloud deployment with auto-scaling (NFR 2). Terraform versions
+the infrastructure for every environment, but it does not make AWS-managed services run on-premise.
+Portability comes from two design choices:
+
+1. **Every service ships as a container image.**
+2. **Services reach infrastructure only through adapters** for storage, messaging, workflow and identity. Moving between platforms swaps adapters and configuration, not business logic.
+
+Phase 1 delivers the AWS profile. The on-premise profile below is designed now and implemented if YCompany
+mandates on-premise hosting. The Compute and Orchestration DARs name the same fallbacks: Kubernetes for
+compute and Camunda for workflow.
+
+| Capability | AWS profile (Phase 1) | On-premise profile |
+|---|---|---|
+| Container runtime and auto-scaling | ECS on Fargate · ECS Service Auto Scaling | Kubernetes (EKS Anywhere, OpenShift or any CNCF-conformant distribution) · Horizontal Pod Autoscaler + Cluster Autoscaler |
+| Workflow | AWS Step Functions | Camunda Platform 8 (self-managed) |
+| Event bus and queues | EventBridge · SQS · SNS | Apache Kafka or RabbitMQ |
+| Relational data | RDS PostgreSQL (Multi-AZ) | PostgreSQL with Patroni high availability |
+| Document metadata | MongoDB Atlas | MongoDB Enterprise (self-managed) |
+| Cache | ElastiCache Redis | Redis (Sentinel or Cluster) |
+| Search | Amazon OpenSearch Service | OpenSearch (self-managed) |
+| Object storage | Amazon S3 (versioning, Object Lock) | MinIO (S3-compatible, object locking) |
+| Identity | Okta · IAM | Keycloak, or Okta with on-premise connectors |
+| Secrets and keys | Secrets Manager · KMS | HashiCorp Vault |
+| Observability | CloudWatch · X-Ray · CloudTrail | Prometheus · Grafana · OpenTelemetry · Loki or ELK |
+| Analytics | Amazon Redshift | On-premise data warehouse (e.g. PostgreSQL-based or ClickHouse) |
+| CI/CD | CodePipeline · CodeBuild · CodeDeploy · ECR | GitLab CI or Jenkins · Argo CD · Harbor |
+
 ---
 
 ## 5. Actors & Roles
@@ -261,6 +293,10 @@ zero-downtime NFR in §7.
 | **Car Rental Partner** | Partner Portal | Publish rental-vehicle catalogue, confirm bookings |
 
 Access for every role is enforced by the **User / RBAC Service** and is **configurable without code changes**, satisfying the functional requirement for role behaviour to be reconfigured administratively.
+
+**Role mapping.**
+- The case study asks for the *Incident Manager* to be notified at first notice of loss. In eClaims this responsibility sits with the **Case Manager** role (assumption, §10). A separate Incident Manager role can be added through the RBAC service without code changes if YCompany's organisation requires it.
+- The Phase 1 POC implements the Customer role and five internal roles: Case Manager, Surveyor, Adjustor, Auditor and Regional Manager. Top Management is part of the target solution.
 
 ![Bounded Contexts (Domain View)](diagrams/Bounded%20Contexts%20(Domain%20View).jpg)
 
@@ -310,13 +346,13 @@ The four workflows below trace a claim through its full lifecycle. Each numbered
 | NFR | Requirement | Implementation in eClaims |
 |---|---|---|
 | **Availability** | 24×7 operation; system restarts itself on any crash | Multi-AZ ECS across 3 zones; container health checks every 5 s with automatic restart; RDS Multi-AZ failover in under 60 s |
-| **Scalability** | Handle 200M+ customers and future growth; auto-scale to demand | ECS auto-scaling (2–100 tasks per service); database read replicas; SQS-based decoupling; Redis caching |
-| **Performance** | 99% of services complete in **< 5,000 ms**, peak and non-peak | Redis L1 cache; CloudFront edge cache; connection pooling; query indexing; continuous P50/P95/P99 latency monitoring |
+| **Scalability** | Handle 200M+ customers and future growth; auto-scale to demand | ECS target-tracking auto-scaling (minimum 2 tasks per service across AZs; maximum sized from the workload model, ceiling 100); read replicas, RDS Proxy and table partitioning; SQS buffering; Redis caching — see §9 |
+| **Performance** | 99% of services complete in **< 5,000 ms**, peak and non-peak | Redis L1 cache; CloudFront edge cache; connection pooling; query indexing; slow work kept off the request path (asynchronous integrations, direct-to-S3 uploads, asynchronous reports); continuous P50/P95/P99 latency monitoring; latency budget and load-test gates in §9 |
 | **Security** | OWASP Top 10; encryption of sensitive data; RBAC | WAF + Shield; OAuth2 + JWT; RBAC at every layer; KMS AES-256 at rest; TLS 1.2+ in transit; PCI-DSS for payments; full audit trail |
-| **Resilience / Reliability** | Self-healing; no single point of failure | Circuit breakers and exponential-backoff retries; blue-green deployment; RTO < 15 min, RPO < 5 min |
+| **Resilience / Reliability** | Self-healing; no single point of failure | Circuit breakers and exponential-backoff retries; blue-green deployment; RTO < 15 min, RPO < 5 min for an Availability Zone failure (cross-region recovery is a Phase 2 item) |
 | **Observability** | Enough logging to debug any error; SLA monitoring | Structured JSON logs → CloudWatch; X-Ray distributed tracing; CloudTrail audit; custom KPI metrics and automated SLA alerts |
-| **Flexibility / Deployability** | No code changes for role config; on-premise **and** cloud | Configuration & RBAC services for administrative role changes; Terraform IaC for both on-premise and AWS |
-| **Compliance / Non-Repudiation** | Audit trail; no repudiation; guard against fraud | CloudTrail immutable audit; digital signatures on claim documents; rule-based (then ML) fraud detection; every communication archived |
+| **Flexibility / Deployability** | No code changes for role config; on-premise **and** cloud | Configuration & RBAC services for administrative role changes; container images plus an on-premise profile on Kubernetes with a portable equivalent for each managed service (§4, Deployment Options); Terraform for every environment |
+| **Compliance / Non-Repudiation** | Audit trail; no repudiation; guard against fraud | Append-only, hash-chained application audit trail archived with S3 Object Lock (WORM); SHA-256 digest of every claim document recorded at upload; CloudTrail for infrastructure audit; rule-based (then ML) fraud detection; every communication archived |
 | **Data management** | Store, back up and recover in a distributed environment | Multi-AZ RDS with automated backups and point-in-time recovery; S3 cross-region replication; versioned object storage |
 | **Maintainability** | Testability, configurability, upgradeability | Independently deployable services; automated test suites; blue-green upgrades; feature flags |
 
@@ -338,18 +374,157 @@ The four workflows below trace a claim through its full lifecycle. Each numbered
 | Notifications | **AWS SES** (email) + **SNS** (SMS) | AWS-native, pay-per-use, compliant delivery |
 | Payments | **Stripe** (PCI-DSS Level 1) | Industry-standard, with built-in fraud detection; keeps YCompany out of PCI scope |
 | Container orchestration | **AWS ECS Fargate** | Serverless containers, no EC2 fleet to manage |
-| Infrastructure-as-Code | **Terraform** | Multi-target (cloud and on-premise), version-controlled infrastructure |
+| Infrastructure-as-Code | **Terraform** | Version-controlled infrastructure for every environment; providers exist for AWS and for on-premise platforms (Kubernetes, vSphere) |
 | CI/CD | **AWS CodePipeline + CodeBuild + CodeDeploy + Amazon ECR** | AWS-native pipeline with blue-green support |
 | Observability | **CloudWatch + X-Ray + CloudTrail** | Native AWS integration with minimal operational overhead |
 | Security | **AWS WAF + Shield + KMS + IAM** | Layered, defence-in-depth security across the stack |
 | Data warehouse | **Amazon Redshift** | Petabyte-scale analytics for management reporting |
 | Identity / SSO | **Okta** (via IAM) | Centralised enterprise identity and single sign-on |
 
-> **Note on the Phase 1 POC.** The accompanying proof of concept implements a representative subset of this stack — FastAPI services, React/TypeScript portals, PostgreSQL and Redis, JWT auth, RBAC and the claim state machine — running locally under Docker Compose. The full AWS-managed services above constitute the target production architecture.
+### POC coverage
+
+The accompanying proof of concept (POC) is a *minimal working* slice of this architecture, running locally
+under Docker Compose (see `README.md`). It demonstrates the layered services, role-based access and the
+governed claim lifecycle. The table maps each target component to its POC stand-in.
+
+| Target component (production) | POC stand-in |
+|---|---|
+| Edge — CloudFront, WAF, ALB | nginx reverse proxy per portal, with security headers |
+| Auth Service (OAuth2/JWT, Okta SSO) | `auth-service` (FastAPI): JWT access and refresh tokens, bcrypt password hashing, rate-limited login |
+| Claims Service + Workflow Engine (Step Functions) | `claims-service` (FastAPI) with an in-service, role-gated state machine — the baseline option evaluated in the Orchestration DAR |
+| User/RBAC + Configuration Service | Role checks inside the services (fixed in code for the POC; administrative configuration is the target) |
+| Notification Service (SNS/SES) | Notification hook: each status change is recorded and logged, not delivered |
+| Document Service (S3 + OpenSearch) | Type- and size-validated uploads stored on a local volume |
+| Cache (ElastiCache Redis) | Redis |
+| Claims DB and User DB (RDS PostgreSQL) | One PostgreSQL instance shared by both services (POC simplification) |
+| Reporting Service + Redshift | Reports page in the Internal Portal |
+| Observability (CloudWatch, X-Ray) | Structured JSON logs with request-ID correlation across services |
+| ECS Fargate, CI/CD, Terraform | Docker Compose |
+
+These components are **not in the POC**; the architecture and the estimate cover them:
+- Partner Portal
+- Payment Service
+- Incident Management auto-assignment
+- Fraud Detection
+- Location Service
+- the mobile app
 
 ---
 
-## 9. Assumptions & Scope
+## 9. Performance & Scalability
+
+This section shows how eClaims meets three NFRs:
+- handle increased load in future (NFR 1);
+- auto-scale to demand (NFR 2);
+- complete **99% of requests in under 5,000 ms** in both peak and non-peak hours (NFR 3).
+
+The approach has four parts:
+1. Size the platform from an explicit workload model.
+2. Keep the synchronous request path short and push slow work to asynchronous processing.
+3. Scale each tier independently.
+4. Prove the target with load tests before go-live.
+
+### 9.1 Workload model
+
+The case study gives only the customer base, so the figures below are **planning assumptions** to be
+validated against YCompany's historical claims data during requirements.
+
+| Driver | Planning value | Basis |
+|---|---|---|
+| Customers | 200 million | Case study |
+| New claims per year | 10 million | Assumed 5% annual claim frequency |
+| Average new claims per day | ≈27,000 | 10 million ÷ 365 |
+| Catastrophe-day peak | ≈270,000 first notices of loss per day | 10× average; hail and hurricane events concentrate claims |
+| Open claims at any time | ≈0.8 million | ≈30-day average claim lifecycle |
+| API calls per claim over its lifecycle | ≈50 | Status checks, staff actions, partner updates |
+| API throughput, normal peak hour | ≈60 requests/s | 15% of the daily 1.37 million calls in the busiest hour |
+| API throughput, catastrophe peak | ≈600 requests/s | 10× normal peak |
+| **Design point** | **1,000 requests/s sustained, 2,000 requests/s burst** | ≥1.6× the catastrophe peak, with headroom for logins, dashboards and partner look-ups |
+| Documents | ≈10 per claim × ≈2 MB → ≈200 TB per year | Photos, police report, survey report, work orders |
+| Notifications | ≈30 per claim → ≈300 million per year | ≈10 status changes × SMS and email × customer and partner |
+
+Two consequences shape the design:
+- **Writes are modest.** First-notice-of-loss writes peak at roughly 11 per second even on a catastrophe day.
+- **The load is read-heavy and bursty.** Storage grows steadily at about 200 TB of documents and about 100 million status-history rows a year.
+
+### 9.2 Latency budget for "99% of requests under 5,000 ms"
+
+The SLO is measured at the load balancer for every synchronous API request. eClaims sets tighter internal
+targets so the mandated budget is never approached:
+- **p99 under 1,000 ms for reads**;
+- **p99 under 2,000 ms for writes**.
+
+| Stage | Typical | p99 budget |
+|---|---|---|
+| Edge — CloudFront, WAF, ALB | 20–60 ms | 300 ms |
+| Token validation (signature check with cached keys, in-service) | < 5 ms | 20 ms |
+| Service logic | 10–50 ms | 300 ms |
+| Cache read (Redis) | ≈1 ms | 20 ms |
+| Database query (indexed, partition-pruned) | 5–30 ms | 500 ms |
+| **Total synchronous request** | **≈100–200 ms** | **≤1,000 ms (reads) · ≤2,000 ms (writes) vs the mandated 5,000 ms** |
+
+Six design rules keep the 99th percentile inside the budget:
+1. **Nothing slow on the request path.** SMS and email, payment callbacks, workshop integrations, fraud scoring and report generation run asynchronously through EventBridge and SQS.
+2. **Uploads bypass the API.** Browsers and the mobile app upload photos and PDFs directly to S3 with pre-signed URLs; the API only registers metadata. A 10 MB photo on a slow mobile link never counts against API latency.
+3. **Reports are asynchronous.** Management reports are generated from Redshift as jobs and delivered as a link or notification. They never query the transactional database in the request path.
+4. **Every outbound call is bounded.** Each has a timeout of at most 2 s, one retry with jitter, and a circuit breaker.
+5. **Lists are paginated.** At most 100 items per page, served from indexed queries or read replicas.
+6. **Hot reads are cached.** Claim status and reference data (policy snapshot, partner directory) sit in Redis with short TTLs and event-driven invalidation.
+
+### 9.3 Scaling strategy by tier
+
+| Tier | How it scales | Trigger and limits |
+|---|---|---|
+| Edge | CloudFront caches the portals' static assets globally; WAF rate-based rules shed abusive traffic | Managed by AWS |
+| Microservices (ECS Fargate) | Stateless tasks behind the ALB with target-tracking auto-scaling | CPU at 60% or ALB requests per target. Minimum 2 tasks per service across AZs; maximum per service from §9.4 (ceiling 100). Cool-downs: 60 s scale-out, 300 s scale-in. Scheduled pre-scaling for known peaks; a catastrophe runbook for manual pre-scaling |
+| Asynchronous processing (SQS consumers, Lambda) | Scales on queue depth; SQS absorbs bursts so API latency is unaffected | Age of oldest message > 60 s; dead-letter queues for poison messages |
+| Cache (ElastiCache Redis) | Cluster mode with replicas | Memory > 70% or CPU > 60% |
+| Transactional database (RDS PostgreSQL, Multi-AZ) | Vertical scaling for writes; read replicas for queues and status reads; RDS Proxy pools connections as tasks scale out; monthly partitions for status history and communications; claims partitioned by creation month beyond 100 million rows | Replica lag < 1 s; CPU < 70% |
+| Search (OpenSearch) | Add data nodes; index lifecycle management | JVM memory pressure, storage |
+| Object storage (S3) | Unlimited. Lifecycle tiering: Standard → Standard-IA after 90 days → Glacier Deep Archive one year after claim closure. Object Lock for retention | — |
+| Analytics (Redshift) | Change-data-capture feed from the transactional store (a CQRS read model); concurrency scaling for month-end reporting | Queue wait time |
+| Notifications (SNS, SES) | Queued through SQS; sending quotas raised before go-live and before known peak seasons | Throttling metrics |
+
+### 9.4 Initial capacity sizing
+
+**Planning assumption:** a 0.5 vCPU / 1 GB task sustains about 100 requests/s of typical claims traffic at a
+p99 under 1 s. This is confirmed or corrected in the first load test.
+
+At the 1,000 requests/s design point, the busiest service (Claims) needs about 10 tasks. Starting limits:
+
+| Services | Minimum tasks | Maximum tasks | Headroom at the design point |
+|---|---|---|---|
+| Claims Service | 2 | 20 | 2× |
+| Other services | 2 | 10 | Load is proportionally lower |
+
+The ceiling of 100 tasks per service stays as the upper bound for growth beyond the model. The Compute DAR
+carries the corresponding cost basis.
+
+### 9.5 Performance engineering and verification
+
+- **Load tests** use k6 in a production-like staging environment, with per-endpoint p50/p95/p99 reported for three profiles:
+  - normal peak hour;
+  - a catastrophe spike at the 1,000 requests/s design point;
+  - an 8-hour soak.
+- **Exit criteria for go-live:**
+  - p99 under 5,000 ms at the design point (internal targets: reads under 1,000 ms, writes under 2,000 ms);
+  - error rate under 0.1%;
+  - no queue backlog older than 5 minutes.
+- **Continuous monitoring:**
+  - CloudWatch and X-Ray latency percentiles per endpoint;
+  - an early-warning alarm when p99 exceeds 2,500 ms (half the budget);
+  - synthetic canaries for first notice of loss, status check and approval, run every minute.
+- **In the pipeline:** a short k6 run on every release candidate; the full suite before major releases and before known peak seasons.
+- **Capacity reviews:**
+  - each quarter, against actual claim volumes;
+  - a catastrophe runbook: pre-scale services, raise SMS and email quotas, route status reads to replicas.
+
+The POC runs the same synchronous design at small scale under Docker Compose and is not performance-tested.
+Load testing is part of the Testing phase in the estimate.
+
+---
+
+## 10. Assumptions & Scope
 
 ### In scope
 
@@ -361,7 +536,7 @@ The four workflows below trace a claim through its full lifecycle. Each numbered
 - SMS/email notifications on every status change
 - Role-based reporting (Case Manager, Regional Manager, Top Management)
 - Electronic payment (Stripe integration)
-- AWS cloud deployment (with Terraform enabling on-premise as well)
+- AWS cloud deployment; on-premise deployment profile designed (§4, Deployment Options)
 
 ### Out of scope (Phase 1)
 
@@ -382,10 +557,13 @@ The four workflows below trace a claim through its full lifecycle. Each numbered
 6. Surveyor geo-coverage areas are **pre-configured** in the Location Service.
 7. The delivery team has an AWS account with the necessary permissions.
 8. Where the case study is silent, reasonable industry-standard assumptions have been made, as permitted by the assignment guidelines.
+9. The *Incident Manager* named in the case study is fulfilled by the **Case Manager** role; a dedicated role can be configured if required.
+10. Phase 1 is delivered on AWS. The on-premise profile (§4, Deployment Options) is designed but implemented only if YCompany mandates on-premise hosting; that implementation is not part of the Phase 1 estimate.
+11. The workload figures in §9.1 are planning assumptions (5% annual claim frequency, ≈30-day claim lifecycle), to be validated against YCompany's claims data.
 
 ---
 
-## 10. References & Appendix
+## 11. References & Appendix
 
 ### References
 
@@ -398,6 +576,11 @@ The four workflows below trace a claim through its full lifecycle. Each numbered
 | 5 | AWS Well-Architected Framework | https://aws.amazon.com/architecture/well-architected/ |
 | 6 | OWASP Top 10 | https://owasp.org/www-project-top-ten/ |
 | 7 | PCI-DSS Compliance | https://www.pcisecuritystandards.org/ |
+| 8 | DAR — Workflow Orchestration Engine | `docs/dar/Utsav_eClaims_DAR_Orchestration_Engine.docx` |
+| 9 | DAR — Backend Framework | `docs/dar/Utsav_eClaims_DAR_Backend.docx` |
+| 10 | DAR — Compute Platform | `docs/dar/Utsav_eClaims_DAR_Compute.docx` |
+| 11 | DAR — Container Orchestrator (Amazon ECS vs Amazon EKS) | `docs/dar/Utsav_eClaims_DAR_ECS_vs_EKS.docx` |
+| 12 | Effort estimate, schedule and resource plan | `docs/estimation/Utsav_eClaims_Estimates.xlsm` |
 
 ### Appendix A — Requirements Traceability Matrix
 
@@ -422,16 +605,16 @@ The matrix confirms that every capability called for in the case study is addres
 | Workshop tracks payment status | Payment Service · Partner Portal |
 | Role-based reports (processing time, ageing, fraud) | Reporting Service · Redshift · Fraud Detection Service |
 | Regional & top-management reporting | Reporting Service · Redshift |
-| Central document management for audit/compliance | Document Service (S3 + OpenSearch) · CloudTrail |
+| Central document management for audit/compliance | Document Service (S3 with versioning and Object Lock + OpenSearch) · application audit trail |
 | Alerts/notifications on every status change (SMS/email) | Notification Service (SNS + SES) |
 | Archive all customer communication | Document Service · S3 (versioned, retained) |
 | Identity management with role-based authN/authZ | Okta / IAM · Auth Service · RBAC Service |
 | Role actions configurable without code changes | Configuration Service · RBAC Service |
 | Encryption of sensitive data at rest | KMS (AES-256) · encrypted RDS/S3 |
-| No repudiation & fraud handling | CloudTrail audit · digital signatures · Fraud Detection Service |
+| No repudiation & fraud handling | Hash-chained application audit trail · document SHA-256 digests · S3 Object Lock · Fraud Detection Service |
 | 24×7 with self-restart | Multi-AZ ECS · health checks · auto-restart |
-| On-premise **and** cloud deployment | Terraform IaC |
-| 99% of requests < 5,000 ms | Redis/CloudFront caching · indexing · latency monitoring |
+| On-premise **and** cloud deployment | Container images · on-premise profile on Kubernetes (§4, Deployment Options) · Terraform |
+| 99% of requests < 5,000 ms | Workload model, latency budget and load-test gates (§9) · caching · asynchronous processing |
 | OWASP Top 10 protection | WAF + Shield · secure SDLC |
 
 ### Appendix B — Architecture Diagram
@@ -444,7 +627,7 @@ context to implementation detail:
 2. **High Level Solution** — a single compact one-page view of the entire solution (MSAG "Solution diagram"), aimed at senior stakeholders. Bands A–F run top to bottom (Users, Channels, Secure Edge, Business Capabilities C1–C6, Event Backbone, Information & Cloud Platform E1–E8, External Systems F1–F6), with the end-to-end claim flow numbered ①–⑩ directly on the edges and walked in prose in the notes panel.
 3. **Logical Architecture** — a technology-agnostic, layered view (MSAG "Application / Component Logical Architecture") naming roles rather than products, so it applies equally to the cloud or on-premise deployment option (§7). Functional modules are tagged M1–M12 and cross-cutting concerns X1–X12, drawn once in a dedicated right-hand column. See page 4 for the concrete technology mapping of every role shown here.
 4. **Layered Solution Architecture** — the six layers as horizontal swim-lanes, every component labelled and colour-coded by layer, with directional data flows annotated by protocol (HTTPS/TLS, OAuth2/JWT, EventBridge/SQS/SNS, SQL, S3 API). Data-flow arrows for the four Section 6 workflows (Claim Submission & Assignment, Survey & Adjudication, Repair Tracking & Payment, Reporting) are colour-coded per workflow with a dedicated Flow Legend, so each business flow can be traced independently of the shared platform/infrastructure flows (shown in grey). The page also carries a capability-mapping callout explaining the Layer 2 API-Gateway design decision (§4) and the standard component-type legend.
-5. **Cloud / Deployment Architecture** — the AWS network-topology realisation of the six layers above (MSAG "System Model — Technical aspect": deployment type, network type, data transmission), for the Phase 1 single-Region, Multi-AZ footprint (§9). Every component is drawn with real AWS Architecture Icons inside proper AWS group containers (Region/VPC/AZ/Subnet/Security-Group) rather than this file's usual plain colour blocks — scoped to this page and page 6 only. Amazon Route 53 (G1) fronts a global edge tier (G2 WAF + Shield, G3 CloudFront) ahead of one VPC spread across three Availability Zones, each repeating a public/private/data three-subnet pattern tagged V1–V6 (ALB target, NAT Gateway, ECS Fargate tasks, RDS Multi-AZ, ElastiCache Redis, OpenSearch); AWS-managed services reached via VPC endpoints are tagged N1–N12; the same external SaaS providers as page 1 are tagged D1–D5/E1, with the open Policy Administration System item (E3) carried through in the same to-be-confirmed styling.
+5. **Cloud / Deployment Architecture** — the AWS network-topology realisation of the six layers above (MSAG "System Model — Technical aspect": deployment type, network type, data transmission), for the Phase 1 single-Region, Multi-AZ footprint (§10). Every component is drawn with real AWS Architecture Icons inside proper AWS group containers (Region/VPC/AZ/Subnet/Security-Group) rather than this file's usual plain colour blocks — scoped to this page and page 6 only. Amazon Route 53 (G1) fronts a global edge tier (G2 WAF + Shield, G3 CloudFront) ahead of one VPC spread across three Availability Zones, each repeating a public/private/data three-subnet pattern tagged V1–V6 (ALB target, NAT Gateway, ECS Fargate tasks, RDS Multi-AZ, ElastiCache Redis, OpenSearch); AWS-managed services reached via VPC endpoints are tagged N1–N12; the same external SaaS providers as page 1 are tagged D1–D5/E1, with the open Policy Administration System item (E3) carried through in the same to-be-confirmed styling.
 6. **CI/CD Pipeline** — the release workflow behind Layer 6's CodePipeline/CodeBuild/CodeDeploy/ECR toolchain, chosen for its fully-managed, pay-per-use cost profile over a self-run alternative like Jenkins. A source push (P1, platform not specified in the case study) triggers CodePipeline (P2) through three sequential stages — Build (P4 CodeBuild → P5 ECR), Infrastructure (P6 CodeBuild running Terraform plan/apply behind a manual approval gate), and Deploy — where CodeDeploy (P7) performs a blue/green release into the same Multi-AZ ECS Fargate service shown on page 5, shifting ALB traffic between the Blue (P10) and Green (P11) task sets and rolling back automatically on a CloudWatch alarm (R1).
 7. **Bounded Contexts (Domain View)** — the Customer, Internal and Partner domains and the event backbone that integrates them.
 
