@@ -487,8 +487,9 @@ Six design rules keep the 99th percentile inside the budget:
 
 ### 9.4 Initial capacity sizing
 
-**Planning assumption:** a 0.5 vCPU / 1 GB task sustains about 100 requests/s of typical claims traffic at a
-p99 under 1 s. This is confirmed or corrected in the first load test.
+**Planning assumption:** a 1 vCPU / 2 GB task — the task size in the Compute DAR's cost basis, which
+averages three such tasks per service — sustains about 100 requests/s of typical claims traffic at a p99
+under 1 s. This is confirmed or corrected in the first load test.
 
 At the 1,000 requests/s design point, the busiest service (Claims) needs about 10 tasks. Starting limits:
 
