@@ -363,6 +363,7 @@ The four workflows below trace a claim through its full lifecycle. Each numbered
 | Component | Technology | Justification |
 |---|---|---|
 | Backend API | Python **FastAPI** | Async, high performance, automatic OpenAPI generation, strong typing via Pydantic |
+| Data access | **SQLAlchemy 2.0 (async)** with **Alembic** migrations | Typed async ORM over PostgreSQL; versioned, reviewable schema migrations per service (the POC seeds its schema from SQL scripts) |
 | Frontend | **React 18 + TypeScript + Vite** | Component reuse across the three portals, strong ecosystem, type safety |
 | Primary database | **PostgreSQL 15** (RDS Multi-AZ) | ACID guarantees for relational claims data, mature, AWS-managed |
 | Document database | **MongoDB Atlas** | Flexible schema and rich metadata queries for claim documents |
@@ -432,20 +433,20 @@ validated against YCompany's historical claims data during requirements.
 | Driver | Planning value | Basis |
 |---|---|---|
 | Customers | 200 million | Case study |
-| New claims per year | 10 million | Assumed 5% annual claim frequency |
-| Average new claims per day | ≈27,000 | 10 million ÷ 365 |
-| Catastrophe-day peak | ≈270,000 first notices of loss per day | 10× average; hail and hurricane events concentrate claims |
-| Open claims at any time | ≈0.8 million | ≈30-day average claim lifecycle |
+| New claims per year | 12 million | Assumed 6% annual claim frequency (the same basis as the Orchestration DAR) |
+| Average new claims per day | ≈33,000 | 12 million ÷ 365 |
+| Catastrophe-day peak | ≈330,000 first notices of loss per day | 10× average; hail and hurricane events concentrate claims |
+| Open claims at any time | ≈1.0 million | ≈30-day average claim lifecycle |
 | API calls per claim over its lifecycle | ≈50 | Status checks, staff actions, partner updates |
-| API throughput, normal peak hour | ≈60 requests/s | 15% of the daily 1.37 million calls in the busiest hour |
-| API throughput, catastrophe peak | ≈600 requests/s | 10× normal peak |
-| **Design point** | **1,000 requests/s sustained, 2,000 requests/s burst** | ≥1.6× the catastrophe peak, with headroom for logins, dashboards and partner look-ups |
-| Documents | ≈10 per claim × ≈2 MB → ≈200 TB per year | Photos, police report, survey report, work orders |
-| Notifications | ≈30 per claim → ≈300 million per year | ≈10 status changes × SMS and email × customer and partner |
+| API throughput, normal peak hour | ≈70 requests/s | 15% of the daily 1.64 million calls in the busiest hour |
+| API throughput, catastrophe peak | ≈700 requests/s | 10× normal peak |
+| **Design point** | **1,000 requests/s sustained, 2,000 requests/s burst** | ≈1.4× the catastrophe peak, with headroom for logins, dashboards and partner look-ups |
+| Documents | ≈10 per claim × ≈2 MB → ≈240 TB per year | Photos, police report, survey report, work orders |
+| Notifications | ≈30 per claim → ≈360 million per year | ≈10 status changes × SMS and email × customer and partner |
 
 Two consequences shape the design:
-- **Writes are modest.** First-notice-of-loss writes peak at roughly 11 per second even on a catastrophe day.
-- **The load is read-heavy and bursty.** Storage grows steadily at about 200 TB of documents and about 100 million status-history rows a year.
+- **Writes are modest.** First-notice-of-loss writes peak at roughly 14 per second even on a catastrophe day.
+- **The load is read-heavy and bursty.** Storage grows steadily at about 240 TB of documents and about 120 million status-history rows a year.
 
 ### 9.2 Latency budget for "99% of requests under 5,000 ms"
 
@@ -560,7 +561,7 @@ Load testing is part of the Testing phase in the estimate.
 8. Where the case study is silent, reasonable industry-standard assumptions have been made, as permitted by the assignment guidelines.
 9. The *Incident Manager* named in the case study is fulfilled by the **Case Manager** role; a dedicated role can be configured if required.
 10. Phase 1 is delivered on AWS. The on-premise profile (§4, Deployment Options) is designed but implemented only if YCompany mandates on-premise hosting; that implementation is not part of the Phase 1 estimate.
-11. The workload figures in §9.1 are planning assumptions (5% annual claim frequency, ≈30-day claim lifecycle), to be validated against YCompany's claims data.
+11. The workload figures in §9.1 are planning assumptions (6% annual claim frequency, ≈30-day claim lifecycle), to be validated against YCompany's claims data.
 
 ---
 
