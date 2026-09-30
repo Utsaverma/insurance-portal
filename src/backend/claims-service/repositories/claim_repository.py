@@ -49,7 +49,8 @@ class ClaimRepository:
             q = q.where(Claim.customer_id == customer_id)
             count_q = count_q.where(Claim.customer_id == customer_id)
         total = (await self.db.execute(count_q)).scalar_one()
-        items = (await self.db.execute(q.offset(skip).limit(limit))).scalars().all()
+        # Newest first, so paging is deterministic and the queue shows recent claims at the top.
+        items = (await self.db.execute(q.order_by(Claim.created_at.desc()).offset(skip).limit(limit))).scalars().all()
         return list(items), total
 
     async def update_status(

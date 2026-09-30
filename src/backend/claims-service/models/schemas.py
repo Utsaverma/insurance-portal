@@ -83,8 +83,3 @@ class UserContext(BaseModel):
     role: str
     full_name: str | None = None
 
-
-class HealthResponse(BaseModel):
-    status: str
-    db: str
-    redis: str

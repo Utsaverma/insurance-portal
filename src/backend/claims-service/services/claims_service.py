@@ -1,17 +1,19 @@
+"""Business rules for the claim lifecycle: access control, the governed state machine and assignment.
+
+The API layer calls these functions and never touches repositories directly. Failures are raised as
+business errors (services/errors.py), which main.py maps to HTTP status codes.
+"""
 import uuid
-from typing import Optional
 
-import redis.asyncio as aioredis
-
-from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import settings
-from models.db_models import ClaimStatus
-from models.schemas import AssignRequest, StatusUpdateRequest, UserContext
+from models.db_models import Claim, ClaimStatus, ClaimStatusHistory
+from models.schemas import AssignRequest, ClaimCreate, StatusUpdateRequest, UserContext
 from repositories.claim_repository import ClaimRepository
+from services.errors import Forbidden, InvalidTransition, NotFound
 from services.notification_service import send_notification
 
+# Role-gated claim lifecycle: current status → role → statuses that role may move the claim to.
 TRANSITIONS: dict[ClaimStatus, dict[str, set[ClaimStatus]]] = {
     ClaimStatus.SUBMITTED: {"CASE_MANAGER": {ClaimStatus.ASSIGNED}},
     ClaimStatus.ASSIGNED: {"SURVEYOR": {ClaimStatus.UNDER_SURVEY}},
@@ -27,10 +29,35 @@ def validate_transition(current: ClaimStatus, requested: ClaimStatus, role: str)
         return
     allowed = TRANSITIONS.get(current, {}).get(role, set())
     if requested not in allowed:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid state transition: {current} → {requested} not allowed for role {role}",
-        )
+        raise InvalidTransition(f"Invalid state transition: {current} → {requested} not allowed for role {role}")
+
+
+def ensure_can_access(user: UserContext, claim: Claim) -> None:
+    """Customers may only see their own claims; internal roles see every claim."""
+    if user.role == "CUSTOMER" and claim.customer_id != user.id:
+        raise Forbidden("Access denied")
+
+
+async def get_accessible_claim(claim_id: uuid.UUID, user: UserContext, db: AsyncSession) -> Claim:
+    claim = await ClaimRepository(db).get_by_id(claim_id)
+    if claim is None:
+        raise NotFound("Claim not found")
+    ensure_can_access(user, claim)
+    return claim
+
+
+async def submit_claim(body: ClaimCreate, user: UserContext, db: AsyncSession) -> Claim:
+    return await ClaimRepository(db).create(body, user.id)
+
+
+async def list_claims(user: UserContext, db: AsyncSession, skip: int, limit: int) -> tuple[list[Claim], int]:
+    customer_filter = user.id if user.role == "CUSTOMER" else None
+    return await ClaimRepository(db).list_claims(customer_id=customer_filter, skip=skip, limit=limit)
+
+
+async def get_history(claim_id: uuid.UUID, user: UserContext, db: AsyncSession) -> list[ClaimStatusHistory]:
+    await get_accessible_claim(claim_id, user, db)
+    return await ClaimRepository(db).get_history(claim_id)
 
 
 async def update_status(
@@ -38,15 +65,13 @@ async def update_status(
     req: StatusUpdateRequest,
     user: UserContext,
     db: AsyncSession,
-    redis_client: aioredis.Redis,
-) -> object:
+) -> Claim:
     repo = ClaimRepository(db)
     claim = await repo.get_by_id(claim_id)
-    if not claim:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found")
+    if claim is None:
+        raise NotFound("Claim not found")
     validate_transition(claim.status, req.status, user.role)
     updated = await repo.update_status(claim, req.status, user.id, req.note)
-    await redis_client.delete(f"claim:{claim_id}:status")
     await send_notification(
         claim_id=claim_id,
         recipient_id=updated.customer_id,
@@ -62,23 +87,18 @@ async def assign_claim(
     req: AssignRequest,
     user: UserContext,
     db: AsyncSession,
-    redis_client: aioredis.Redis,
-) -> object:
+) -> Claim:
     repo = ClaimRepository(db)
     claim = await repo.get_by_id(claim_id)
-    if not claim:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found")
+    if claim is None:
+        raise NotFound("Claim not found")
     new_status = None
     if claim.status == ClaimStatus.SUBMITTED:
         if user.role != "CASE_MANAGER":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only case managers can assign a submitted claim",
-            )
+            raise Forbidden("Only case managers can assign a submitted claim")
         new_status = ClaimStatus.ASSIGNED
     updated = await repo.assign(claim, req.assigned_to, user.id, new_status)
     if new_status is not None:
-        await redis_client.delete(f"claim:{claim_id}:status")
         await send_notification(
             claim_id=claim_id,
             recipient_id=updated.customer_id,
@@ -87,20 +107,3 @@ async def assign_claim(
             db=db,
         )
     return updated
-
-
-async def get_claim_status_cached(
-    claim_id: uuid.UUID,
-    db: AsyncSession,
-    redis_client: aioredis.Redis,
-) -> Optional[str]:
-    key = f"claim:{claim_id}:status"
-    cached = await redis_client.get(key)
-    if cached:
-        return cached.decode()
-    repo = ClaimRepository(db)
-    claim = await repo.get_by_id(claim_id)
-    if not claim:
-        return None
-    await redis_client.setex(key, settings.redis_cache_ttl, claim.status)
-    return claim.status

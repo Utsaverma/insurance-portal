@@ -115,9 +115,19 @@ async def test_case_manager_override_to_any_status(client, sample_claim, case_ma
 
 
 @pytest.mark.asyncio
-async def test_redis_cache_hit_skips_db(mock_redis, db_session, sample_claim, customer_user):
-    from services.claims_service import get_claim_status_cached
-    status = await get_claim_status_cached(sample_claim.id, db_session, mock_redis)
-    assert status == "SUBMITTED"
-    cached = await get_claim_status_cached(sample_claim.id, db_session, mock_redis)
-    assert cached == "SUBMITTED"
+async def test_staff_directory_is_cached_in_redis(mock_redis):
+    import httpx
+    from services.user_directory import get_staff_directory
+
+    calls = []
+
+    def auth_service(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(200, json=[{"id": "u1", "email": "carol@test.com", "full_name": "Carol Surveyor"}])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(auth_service)) as client:
+        first = await get_staff_directory(client, mock_redis, "token", "req-1")
+        second = await get_staff_directory(client, mock_redis, "token", "req-2")
+
+    assert first == second == {"u1": "Carol Surveyor"}
+    assert len(calls) == 1  # the second lookup is served from Redis
