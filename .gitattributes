@@ -1,0 +1,2 @@
+# Keep superseded diagram versions out of `git archive` submission zips
+docs/sad/archive export-ignore
