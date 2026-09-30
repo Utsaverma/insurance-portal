@@ -27,32 +27,43 @@ the four core eClaims capabilities via a single `docker compose up`. See
 - [Running the tests](#running-the-tests)
 - [Configuration](#configuration)
 - [Security notes](#security-notes)
+- [POC vs target architecture](#poc-vs-target-architecture)
 - [Scope & limitations](#scope--limitations)
+- [Troubleshooting](#troubleshooting)
+- [Documentation](#documentation)
 
 ---
 
 ## Features
 
 **Customer portal**
-- Register / log in (JWT-based)
-- Submit a claim (policy number, incident date, description, claimed amount)
-- Attach supporting documents (PDF / JPEG / PNG, drag-and-drop, ≤ 10 MB, MIME-validated)
-- Track claim status on a dashboard and view a full status timeline
-- Download uploaded documents
+- Log in (JWT-based). Accounts come from the seed or from `POST /auth/register`; there is no sign-up page yet
+- Submit a claim (policy number, incident date, description, claimed amount in USD)
+- Attach a supporting document when submitting (PDF / JPEG / PNG, drag-and-drop, ≤ 10 MB, MIME-validated)
+- Track claims on a dashboard, including the approved amount once a claim is approved
+- Follow each claim's status timeline from submission onwards, and download its documents
 
 **Internal staff portal**
-- Role-aware claims queue with status filters, date-range filters, and sortable columns
-- Adjudication actions gated by role and current claim status (assign, survey, adjudicate, approve, reject, pay)
-- Document viewer / downloader
-- Client-side reports (processing time, amounts paid, status breakdown) for managers
+- Claims queue, newest first, with a status filter and sorting by incident date
+- Actions gated by role and the claim's current status: assign or reassign to a surveyor or adjustor, complete the
+  survey with an assessed amount, approve with an amount or reject, mark paid
+- Case-manager override: an explicit form with a mandatory reason and a confirmation step
+- Claim detail with the claimed, assessed and approved amounts, document downloads, and the audit trail
+- Reports for case and regional managers, computed in the browser from the latest 1,000 claims: claims per
+  status, approved and paid totals, and the average processing time of closed claims
 
 **Platform**
-- Six-role RBAC enforced across services
-- Claim status **state machine** — invalid transitions are rejected at the API
-- Login **rate limiting** and structured **JSON logging** with request-ID correlation
-- Redis caching of claim status
-- Notification **stub** (logged to stdout + persisted to the `notifications` table)
-- Health-checked containers, seeded database, and Nginx with security headers
+- Role-based access control for six roles (customer + five internal roles), enforced in the API
+- Claim status **state machine**: invalid transitions are rejected. A case-manager override needs a reason
+  and is recorded in the status history. Paid claims are final
+- **Amounts** carried through the lifecycle: the surveyor's assessed amount and the adjustor's approved amount,
+  which can never exceed the claimed amount (enforced in the service and by database constraints)
+- An **audit trail** on every claim, starting at submission: each status change and assignment, who made it
+  (their name at the time), when, and the note or override reason
+- Login **rate limiting** and structured **JSON logging** with request-ID correlation across services
+- Redis cache for the staff directory, so staff views don't call the auth service on every request
+- Notification **stub**: each status change is logged and persisted to the `notifications` table, not delivered
+- Health-checked containers with restart policies, a seeded database, and nginx with security headers
 
 ---
 
@@ -61,7 +72,8 @@ the four core eClaims capabilities via a single `docker compose up`. See
 Two React single-page apps sit behind Nginx, which serves static assets and reverse-proxies
 API calls to two FastAPI backends. The backends share a PostgreSQL database; the claims
 service also uses Redis. The claims service validates every request by calling the auth
-service's `/users/me` endpoint.
+service's `/users/me` endpoint. Both are deliberate POC simplifications; see
+[POC vs target architecture](#poc-vs-target-architecture).
 
 ```
                  ┌───────────────────┐        ┌───────────────────┐
@@ -83,9 +95,15 @@ service's `/users/me` endpoint.
         └───────────┘            └───────────┘  └─────────┘
 ```
 
-**Backend layering** (both services): `api/routers` → `services` → `repositories` → `models`,
-with `dependencies/` providing DB sessions and auth, and `config.py` reading settings from the
-environment. Each service is fully async (SQLAlchemy 2.0 async + asyncpg).
+**Backend layering** (claims-service; auth-service uses the same folders):
+- `api/routers`: HTTP only. Parse the request, delegate to a service, shape the response.
+- `services`: business rules (access checks, the state machine, amounts, assignment). Failures are raised as
+  business errors (`services/errors.py`) and mapped to HTTP status codes in one place in `main.py`.
+- `repositories`: data access.
+- `models`: ORM models and API schemas.
+
+`dependencies/` provides DB sessions and authentication, and `config.py` reads settings from the environment.
+Each service is fully async (SQLAlchemy 2.0 async + asyncpg).
 
 ---
 
@@ -94,7 +112,7 @@ environment. Each service is fully async (SQLAlchemy 2.0 async + asyncpg).
 | Layer            | Technology                                                             |
 |------------------|------------------------------------------------------------------------|
 | Backend          | Python 3.12, FastAPI, SQLAlchemy 2.0 (async), Pydantic v2               |
-| Auth             | JWT (python-jose), bcrypt (passlib), slowapi rate limiting             |
+| Auth             | JWT (python-jose), bcrypt, slowapi rate limiting on login              |
 | Frontend         | React 18, TypeScript, Vite, React Router 6, Axios, Tailwind CSS        |
 | Data             | PostgreSQL 15, Redis 7                                                  |
 | File validation  | python-magic (MIME sniffing), aiofiles                                  |
@@ -167,15 +185,19 @@ Once all six containers report healthy:
 | PostgreSQL       | localhost:5432                       |
 | Redis            | localhost:6379                       |
 
-> The database is seeded automatically from `infrastructure/db/init.sql` on first start
-> (6 users, 3 sample claims with status history).
+> The database is seeded automatically from `infrastructure/db/init.sql` on first start: 6 users and 6 sample
+> auto claims, one per key status, each with a legal status history. `init.sql` runs only on an empty database,
+> so reset with `docker compose down -v` after changing it.
 
-**End-to-end walkthrough:**
-1. Open the **customer portal** → log in as `customer@test.com / Test1234!` → submit a claim.
-2. Open the **internal portal** → log in as `casemanager@test.com` → assign the claim to a surveyor.
-3. Log in as `surveyor@test.com` → start survey → submit assessment.
-4. Log in as `adjuster@test.com` → begin adjudication → approve with an amount.
-5. Back in the customer portal → the claim now shows **APPROVED**.
+**End-to-end walkthrough** (the demo path; `infrastructure/smoke-test.sh` automates the same journey through the API):
+1. **Customer portal**: log in as `customer@test.com` / `Test1234!` and submit a claim with a photo or police report
+   (PDF, JPEG or PNG, up to 10 MB).
+2. **Internal portal**: log in as `casemanager@test.com` and assign the claim to Carol Surveyor.
+3. Log in as `surveyor@test.com`, start the survey and complete it with an assessed amount.
+4. Log in as `adjuster@test.com`, begin adjudication and approve an amount (never above the claimed amount).
+5. Back in the **customer portal**: the claim shows **APPROVED** with the approved amount and its full timeline.
+6. Log in as `auditor@test.com` and open any claim to see its audit trail.
+7. Log in as `casemanager@test.com` and reopen the seeded **REJECTED** claim with an override (a reason is required).
 
 Tear down with `docker compose down` (add `-v` to also drop the database and upload volumes).
 
@@ -194,7 +216,8 @@ All seeded users share the password **`Test1234!`**.
 | auditor@test.com        | `AUDITOR`          | Eve Auditor    |
 | manager@test.com        | `REGIONAL_MANAGER` | Frank Manager  |
 
-New self-registrations through the customer portal always receive the `CUSTOMER` role.
+Self-registration (`POST /auth/register`) always gives the `CUSTOMER` role. It is API-only; the portal has no
+sign-up page yet.
 
 ---
 
@@ -236,18 +259,26 @@ SUBMITTED ──(CASE_MANAGER)──▶ ASSIGNED ──(SURVEYOR)──▶ UNDER
    │                                              (ADJUSTOR) │
    │                                        ┌───────────────┴──────────────┐
    ▼                                        ▼                              ▼
-(CASE_MANAGER may override to any status) APPROVED ──(ADJUSTOR)──▶ PAID   REJECTED
+(CASE_MANAGER may override, with a reason) APPROVED ──(ADJUSTOR)──▶ PAID   REJECTED
 ```
 
-- **REJECTED** and **PAID** are terminal states.
-- A **CASE_MANAGER** may override a claim to any status (escape hatch).
+- **PAID** is final: no role, including a case manager, can change it. A claim can be paid only once it has an
+  approved amount, so no override can skip approval.
+- **REJECTED** ends the normal flow, but a case manager can reopen it with an override.
+- A **CASE_MANAGER** may override a claim to any other status, with a mandatory reason. The override is
+  recorded in the status history as `Case manager override: <reason>`.
+- Completing the survey (**SURVEYED**) requires an assessed amount. Approving (**APPROVED**) requires an approved
+  amount no higher than the claimed amount. The same rules apply to overrides.
+- Assigning a **SUBMITTED** claim moves it to **ASSIGNED**; later reassignments keep the status. Every assignment
+  is recorded in the history, and closed claims (**PAID** or **REJECTED**) cannot be reassigned.
 
 ---
 
 ## API reference
 
 Interactive Swagger UI is available at `/docs` on each backend
-(`http://localhost:8001/docs`, `http://localhost:8002/docs`).
+(`http://localhost:8001/docs`, `http://localhost:8002/docs`). Through the portals, the same routes are served
+under `/api` (for example `http://localhost:3000/api/claims`).
 
 ### Auth service (`:8001`)
 
@@ -255,10 +286,10 @@ Interactive Swagger UI is available at `/docs` on each backend
 |--------|------------------|-------------|----------------------------------------------------------|
 | POST   | `/auth/register` | Public      | Register a customer account                              |
 | POST   | `/auth/login`    | Public      | Log in → access + refresh tokens (rate-limited 10/min)   |
-| POST   | `/auth/refresh`  | Refresh JWT | Rotate the token pair                                    |
+| POST   | `/auth/refresh`  | Refresh JWT | Issue a new token pair (the old refresh token stays valid until it expires) |
 | GET    | `/users/me`      | Bearer      | Current user profile                                     |
-| PATCH  | `/users/me`      | Bearer      | Update own `full_name` / `address`                       |
-| GET    | `/users/all`     | Bearer      | List users (CASE_MANAGER, REGIONAL_MANAGER only)         |
+| PATCH  | `/users/me`      | Bearer      | Update own `full_name`                                   |
+| GET    | `/users/all`     | Bearer      | List users (CASE_MANAGER, REGIONAL_MANAGER, SURVEYOR, ADJUSTOR) |
 | GET    | `/health`        | Public      | Liveness check                                           |
 
 ### Claims service (`:8002`)
@@ -266,23 +297,25 @@ Interactive Swagger UI is available at `/docs` on each backend
 | Method | Path                                              | Auth   | Description                                       |
 |--------|---------------------------------------------------|--------|---------------------------------------------------|
 | POST   | `/claims`                                         | Bearer | Submit a claim (CUSTOMER only)                    |
-| GET    | `/claims`                                         | Bearer | List claims (customers see only their own)        |
+| GET    | `/claims`                                         | Bearer | List claims, newest first (customers see only their own; `limit` 1–1000) |
 | GET    | `/claims/{id}`                                    | Bearer | Claim detail (ownership-checked for customers)    |
-| PATCH  | `/claims/{id}/status`                             | Bearer | Advance claim status (role + state-machine gated) |
-| GET    | `/claims/{id}/history`                            | Bearer | Status history timeline                           |
+| POST   | `/claims/{id}/assign`                             | Bearer | Assign to a staff member (CASE_MANAGER, REGIONAL_MANAGER); a SUBMITTED claim becomes ASSIGNED; closed claims cannot be reassigned |
+| PATCH  | `/claims/{id}/status`                             | Bearer | Change status: role + state-machine gated; `assessed_amount` at SURVEYED, `approved_amount` at APPROVED; PAID only with an approved amount; overrides need a `note` |
+| GET    | `/claims/{id}/history`                            | Bearer | Audit trail from SUBMITTED: status changes and assignments, each with who acted (`changed_by_name`) |
 | POST   | `/claims/{id}/documents`                          | Bearer | Upload a document (CUSTOMER, SURVEYOR, ADJUSTOR)  |
 | GET    | `/claims/{id}/documents`                          | Bearer | List documents for a claim                        |
 | GET    | `/claims/{id}/documents/{doc_id}/download`        | Bearer | Download a document                               |
 | GET    | `/health`                                         | Public | Liveness check (reports DB + Redis status)        |
 
-Uploads are validated by extension, size (≤ 10 MB), and true MIME type
-(via content sniffing) — mismatches are rejected with `415`, oversize with `413`.
+Uploads are validated by extension, size (≤ 10 MB) and true content type (content sniffing): mismatches are
+rejected with `415`, oversize with `413`. Business-rule violations return `400` with a `detail` message.
 
 ---
 
 ## Local development (without Docker)
 
-Each service can be run directly. Point `DATABASE_URL` / `REDIS_URL` at your local instances.
+Each service can be run directly with Python 3.12. Point `DATABASE_URL` / `REDIS_URL` at your local instances,
+and apply `infrastructure/db/init.sql` to the database first (the services don't create tables).
 
 ### Auth service
 
@@ -309,8 +342,7 @@ uvicorn main:app --reload --port 8002
 ```bash
 cd src/frontend/customer-portal   # or internal-portal
 npm install
-echo "VITE_API_BASE_URL=http://localhost:8000" > .env.local   # or your proxy target
-npm run dev     # customer-portal → :3000, internal-portal → :3001
+npm run dev     # customer-portal → :3000, internal-portal → :3001; /api is proxied to the services on :8001 / :8002
 ```
 
 #### Shared design tokens
@@ -327,7 +359,7 @@ After touching any shared file, run the drift check — it must exit 0:
 bash src/frontend/check-shared.sh
 ```
 
-It walks the full shared set (design tokens, `ui/*` primitives, `layout/{AppShell,Header,MobileNav,ThemeToggle,UserMenu}.tsx`, `ThemeContext.tsx`, `lib/{cn,initials,theme,format}.ts`, `DocumentList.tsx`) and fails loudly on any unexpected difference, with an explicit allowlist for the files that legitimately differ per portal (`nav.ts`, `layout/shell.ts`, `pages/Login.tsx`, `index.html`, `main.tsx`, `ui/index.ts`, `ClaimStatusBadge.tsx`, `lib/user.ts`).
+It walks the full shared set (design tokens, `ui/*` primitives, `layout/{AppShell,Header,MobileNav,ThemeToggle,UserMenu}.tsx`, `ThemeContext.tsx`, `lib/{cn,initials,theme,format}.ts`, `DocumentList.tsx`, `StatusTimeline.tsx`) and fails loudly on any unexpected difference, with an explicit allowlist for the files that legitimately differ per portal (`nav.ts`, `layout/shell.ts`, `pages/Login.tsx`, `index.html`, `main.tsx`, `ui/index.ts`, `ClaimStatusBadge.tsx`, `lib/user.ts`).
 
 Two rules that are easy to break and only fail in the production build:
 
@@ -346,11 +378,21 @@ Two rules that are easy to break and only fail in the production build:
 # After changing code, rebuild first: docker compose build auth-service claims-service
 cd infrastructure
 docker compose run --rm --no-deps auth-service python -m pytest -q     # 14 tests
-docker compose run --rm --no-deps claims-service python -m pytest -q   # 13 tests
+docker compose run --rm --no-deps claims-service python -m pytest -q   # 23 tests
 ```
 
 Tests use an in-memory SQLite database, a fake Redis and a stubbed auth-service call, so no other
-containers need to be running. There is also an end-to-end smoke test at `infrastructure/smoke-test.sh`.
+containers need to be running.
+
+**Pre-demo gate:** `cd infrastructure && bash smoke-test.sh` runs the whole demo journey through nginx `/api`:
+- security headers and deep links;
+- uploads;
+- every workflow rule, including its rejection path;
+- cross-customer access;
+- health.
+
+It stops with a non-zero exit code at the first unexpected result. It makes 6 logins, and login is rate-limited
+to 10 per minute, so don't run it in the minute before a live demo.
 
 ---
 
@@ -378,25 +420,90 @@ max file size, allowed MIME types, cache TTL, log level).
 
 ---
 
+## Security notes
+
+What the POC implements:
+- JWT access and refresh tokens, signed with HS256 using a secret of at least 32 characters, with the algorithm
+  pinned on decode; passwords hashed with bcrypt
+- Login rate-limited to 10 attempts per minute per client
+- Role checks on every endpoint, plus ownership checks, so customers only reach their own claims and documents
+- Uploads checked by extension, size and sniffed content type, and stored under random names (no path traversal)
+- Parameterised queries throughout (SQLAlchemy); no SQL is built from user input
+- nginx security headers on the portals: `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` and a
+  `Content-Security-Policy`
+- Secrets come from `infrastructure/.env`, which is gitignored and never copied into images (`.dockerignore`)
+
+Known gaps, on the roadmap for a production build:
+- Tokens are kept in `localStorage`; refresh tokens are not revoked, and there is no reuse detection
+- Security headers are not repeated on static assets, and there is no TLS locally
+- PostgreSQL and Redis ports are published to the host, and Redis has no password
+- Containers run as root; `python-jose` should be replaced (CVE-2024-33663, CVE-2024-33664)
+- Surveyors and adjustors can act on any claim, not only those assigned to them
+
+---
+
+## POC vs target architecture
+
+The POC is a *minimal working* slice of the architecture in `docs/sad/solution-approach-document.md`
+(SAD §8, *POC coverage*). This is what stands in for each target component, and why:
+
+| Target (SAD) | In this POC | Why it differs |
+|---|---|---|
+| CloudFront, WAF, ALB | nginx per portal: `/api` routing, security headers, 12 MB body limit | Local, single host |
+| Auth Service with Okta SSO; tokens validated locally | `auth-service`: HS256 JWT access and refresh tokens. claims-service validates every request by calling `/users/me` | Simple, and role changes take effect immediately; the cost is one extra hop per request |
+| Claims Service + Workflow Engine (Step Functions) | In-service, role-gated state machine in `services/claims_service.py` | The baseline option in the Orchestration DAR. The rules live in one module, so moving to an engine changes orchestration, not business logic |
+| User/RBAC + Configuration Service | Role rules fixed in code | Keeps the POC small |
+| Event bus + Notification Service (SNS, SES) | Notification stub: logged and persisted | No external providers |
+| Document Service (S3 + OpenSearch) | Validated uploads on a local volume | Local, single host |
+| Separate Claims and User databases (RDS PostgreSQL) | One PostgreSQL instance shared by both services | Fewer moving parts |
+| ElastiCache Redis | Redis caching the staff directory | — |
+| Reporting Service + Redshift | Reports page computed in the browser | Small data volumes |
+| CloudWatch + X-Ray | JSON logs with request-ID correlation across services | — |
+| ECS Fargate, CodePipeline, Terraform | Docker Compose | Local, single host |
+
+---
+
 ## Scope & limitations
 
 This is a **POC**. The following are intentionally out of scope and deferred to a full
 implementation (see `docs/sad/` for the architecture and rationale):
 
-- Payment integration (Stripe) — stubbed endpoint only
-- Real SMS / email delivery — notifications are logged and persisted, not sent
-- Partner workshop portal, workshop selection & appointment booking
+- Payment integration (Stripe): not implemented; PAID is a status the adjustor sets
+- Real SMS / email delivery: notifications are logged and persisted, not sent
+- Partner workshop portal, workshop selection and appointment booking
 - Auto-assignment of staff by geography / availability
 - Rental car booking
-- Fraud detection service
+- Fraud detection
 - Top Management role (cross-region KPIs)
+- Customer sign-up page, profile (address, billing cycle) and payment screens
+- Token refresh in the portals: a session lasts the access-token lifetime (120 minutes by default)
+- Configurable permissions: role rules are fixed in code in the POC
 - Mobile app
-- Cloud (AWS) deployment — Docker Compose is for local use only
+- Cloud (AWS) deployment: Docker Compose is for local use only
+
+---
+
+## Troubleshooting
+
+- **A port is already in use:** set `CUSTOMER_PORTAL_PORT`, `INTERNAL_PORTAL_PORT`, `AUTH_PORT` or `CLAIMS_PORT`
+  in `infrastructure/.env`.
+- **Schema or seed changes don't show up:** `init.sql` runs only on an empty database. Reset with
+  `docker compose down -v && docker compose up -d --wait`.
+- **Login returns 429:** login is limited to 10 attempts per minute per client; wait a minute.
+- **The claims API returns 503:** the auth service is unreachable. Check `docker compose ps` and
+  `docker compose logs auth-service`.
 
 ---
 
 ## Documentation
-The resulting architecture deliverables live in `docs/sad/`:
+
+Decision records and the estimate:
+
+- `docs/dar/`: Decision Analysis and Recommendation documents for the workflow engine, backend framework,
+  compute platform and container orchestrator
+- `docs/estimation/`: the effort estimate, schedule and resource plan
+
+The architecture deliverables live in `docs/sad/`:
 
 - `solution-approach-document.md` — the full Solution Approach Document (SAD)
 - `architecture-diagram.drawio.xml` — the seven-page companion diagram set (draw.io / diagrams.net
