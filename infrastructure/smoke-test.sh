@@ -2,8 +2,16 @@
 # Smoke test — run after `docker compose up --build --wait`
 set -euo pipefail
 
-BASE_AUTH=http://localhost:8001
-BASE_CLAIMS=http://localhost:8002
+# Host ports follow the same precedence as docker compose: shell environment, then .env, then defaults.
+if [ -f .env ]; then
+  while IFS='=' read -r key value; do
+    [ -z "${!key:-}" ] && export "$key=$value"
+  done < <(grep -E '^(CUSTOMER_PORTAL_PORT|INTERNAL_PORTAL_PORT|AUTH_PORT|CLAIMS_PORT)=' .env || true)
+fi
+BASE_AUTH="http://localhost:${AUTH_PORT:-8001}"
+BASE_CLAIMS="http://localhost:${CLAIMS_PORT:-8002}"
+CUSTOMER_PORTAL="http://localhost:${CUSTOMER_PORTAL_PORT:-3000}"
+INTERNAL_PORTAL="http://localhost:${INTERNAL_PORTAL_PORT:-3001}"
 
 echo "=== Verifying seed data ==="
 docker compose exec -T postgres psql -U eclaims -d eclaims \
@@ -111,14 +119,17 @@ curl -sf "$BASE_CLAIMS/claims/$CLAIM_ID/documents/$DOC_ID/download" \
 echo "   download OK"
 
 echo "15. Security headers check..."
-HEADERS=$(curl -sI http://localhost:3000)
+HEADERS=$(curl -sI "$CUSTOMER_PORTAL/")
+missing=0
 for header in "X-Frame-Options: DENY" "X-Content-Type-Options: nosniff" "Referrer-Policy:"; do
   if echo "$HEADERS" | grep -qi "$header"; then
     echo "   ✓ $header"
   else
     echo "   ✗ MISSING: $header" >&2
+    missing=1
   fi
 done
+[ "$missing" -eq 0 ] || { echo "Security headers missing on $CUSTOMER_PORTAL" >&2; exit 1; }
 
 echo ""
 echo "=== Health checks ==="
@@ -129,5 +140,5 @@ echo ""
 echo "=== Smoke test PASSED ==="
 echo ""
 echo "Open in browser:"
-echo "  Customer Portal : http://localhost:3000  (customer@test.com / Test1234!)"
-echo "  Internal Portal : http://localhost:3001  (casemanager@test.com / Test1234!)"
+echo "  Customer Portal : $CUSTOMER_PORTAL  (customer@test.com / Test1234!)"
+echo "  Internal Portal : $INTERNAL_PORTAL  (casemanager@test.com / Test1234!)"
