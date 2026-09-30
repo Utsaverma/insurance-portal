@@ -171,8 +171,8 @@ cd infrastructure
 docker compose up --build --wait
 ```
 
-> Port already in use? Set `CUSTOMER_PORTAL_PORT`, `INTERNAL_PORTAL_PORT`, `AUTH_PORT` or `CLAIMS_PORT`
-> in `infrastructure/.env` (defaults 3000, 3001, 8001, 8002).
+> Port already in use? Set `CUSTOMER_PORTAL_PORT`, `INTERNAL_PORTAL_PORT`, `AUTH_PORT`, `CLAIMS_PORT`,
+> `POSTGRES_PORT` or `REDIS_PORT` in `infrastructure/.env` (defaults 3000, 3001, 8001, 8002, 5432, 6379).
 
 Once all six containers report healthy:
 
@@ -485,7 +485,7 @@ implementation (see `docs/sad/` for the architecture and rationale):
 
 ## Troubleshooting
 
-- **A port is already in use:** set `CUSTOMER_PORTAL_PORT`, `INTERNAL_PORTAL_PORT`, `AUTH_PORT` or `CLAIMS_PORT`
+- **A port is already in use:** set `CUSTOMER_PORTAL_PORT`, `INTERNAL_PORTAL_PORT`, `AUTH_PORT`, `CLAIMS_PORT`, `POSTGRES_PORT` or `REDIS_PORT`
   in `infrastructure/.env`.
 - **Schema or seed changes don't show up:** `init.sql` runs only on an empty database. Reset with
   `docker compose down -v && docker compose up -d --wait`.
