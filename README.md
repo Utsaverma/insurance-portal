@@ -340,15 +340,15 @@ Two rules that are easy to break and only fail in the production build:
 ## Running the tests
 
 ```bash
-# Auth service — 14 tests
-cd src/backend/auth-service && pytest -v
-
-# Claims service — 14 tests
-cd src/backend/claims-service && pytest -v
+# Run inside the service images (Python 3.12 + libmagic, exactly as in production).
+# After changing code, rebuild first: docker compose build auth-service claims-service
+cd infrastructure
+docker compose run --rm --no-deps auth-service python -m pytest -q     # 14 tests
+docker compose run --rm --no-deps claims-service python -m pytest -q   # 13 tests
 ```
 
-Tests run against an in-memory SQLite database and a fake Redis, so no external services are
-required. There is also an end-to-end smoke test at `infrastructure/smoke-test.sh`.
+Tests use an in-memory SQLite database, a fake Redis and a stubbed auth-service call, so no other
+containers need to be running. There is also an end-to-end smoke test at `infrastructure/smoke-test.sh`.
 
 ---
 

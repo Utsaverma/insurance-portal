@@ -67,8 +67,9 @@ def adjustor_user():
 
 
 @pytest_asyncio.fixture
-async def client(db_session, mock_redis, customer_user):
+async def client(db_session, mock_redis, customer_user, monkeypatch):
     from dependencies.auth import get_current_user
+    from repositories.claim_repository import ClaimRepository
     import httpx
 
     async def override_db():
@@ -77,14 +78,29 @@ async def client(db_session, mock_redis, customer_user):
     async def override_user():
         return customer_user
 
+    # SQLite has no claim_seq sequence, so test claim numbers are generated in Python.
+    async def test_claim_number(self):
+        return f"CLM-TEST-{uuid.uuid4().hex[:8].upper()}"
+
+    monkeypatch.setattr(ClaimRepository, "generate_claim_number", test_claim_number)
+
+    # Staff names come from auth-service; answer that call locally so the suite needs no network.
+    def auth_service_stub(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[])
+
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[get_current_user] = override_user
     app.state.redis = mock_redis
-    app.state.http_client = httpx.AsyncClient()
+    app.state.http_client = httpx.AsyncClient(transport=httpx.MockTransport(auth_service_stub))
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"Authorization": "Bearer test-token"},
+    ) as ac:
         yield ac
 
+    await app.state.http_client.aclose()
     app.dependency_overrides.clear()
 
 

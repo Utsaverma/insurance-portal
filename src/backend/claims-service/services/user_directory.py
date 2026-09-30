@@ -12,7 +12,7 @@ async def fetch_staff_directory(client: httpx.AsyncClient, token: str, request_i
             headers={"Authorization": f"Bearer {token}", "X-Request-ID": request_id},
             timeout=5.0,
         )
-    except httpx.TimeoutException:
+    except httpx.HTTPError:
         return {}
     if not resp.is_success:
         return {}
