@@ -2155,7 +2155,9 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="ci-edge11" edge="1" parent="1" source="ci-p7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=12;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;jumpStyle=arc;jumpSize=8;strokeColor=#4d4d4d;exitX=1;exitY=0.5;entryX=0;entryY=0.3;" target="ci-p8" value="Controls weighted-target-group traffic-shift schedule">
-          <mxGeometry relative="1" as="geometry" />
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <mxPoint x="230" y="-14" as="offset" />
+          </mxGeometry>
         </mxCell>
         <mxCell id="ci-edge12" edge="1" parent="1" source="ci-p8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=12;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;jumpStyle=arc;jumpSize=8;strokeColor=#4d4d4d;exitX=1.016;exitY=0.165;entryX=0.2;entryY=1;exitDx=0;exitDy=0;exitPerimeter=0;" target="ci-p10" value="Traffic OUT — 100% → 0%">
           <mxGeometry relative="1" as="geometry" />
