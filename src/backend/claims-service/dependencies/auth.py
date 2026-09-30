@@ -13,6 +13,9 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
 ) -> UserContext:
     token = credentials.credentials
+    # A JWT is always ASCII; anything else cannot even be forwarded as a header, so refuse it as invalid.
+    if not token.isascii():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
     client = request.app.state.http_client
     try:
         resp = await client.get(

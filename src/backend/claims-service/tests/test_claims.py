@@ -222,3 +222,14 @@ async def test_paid_claim_is_final(client, db_session, sample_claim, case_manage
         json={"status": "UNDER_ADJUDICATION", "note": "Reopen"},
     )
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_non_ascii_bearer_token_is_rejected_with_401():
+    from fastapi import HTTPException
+    from fastapi.security import HTTPAuthorizationCredentials
+
+    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="bad✓token")
+    with pytest.raises(HTTPException) as exc:
+        await get_current_user(request=None, credentials=credentials)
+    assert exc.value.status_code == 401
