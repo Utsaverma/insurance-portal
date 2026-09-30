@@ -68,7 +68,7 @@ service's `/users/me` endpoint.
   Browser  ─────▶│  customer-portal  │        │  internal-portal  │
                  │  Nginx :3000      │        │  Nginx :3001      │
                  └─────────┬─────────┘        └─────────┬─────────┘
-                           │  /auth  /users  /claims  (reverse proxy)
+                           │  /api/auth  /api/users  /api/claims  (reverse proxy)
               ┌────────────┴───────────────┬────────────┘
               ▼                             ▼
       ┌───────────────┐            ┌──────────────────┐
@@ -209,8 +209,10 @@ New self-registrations through the customer portal always receive the `CUSTOMER`
 | postgres         | 5432           | 5432      | —                                   |
 | redis            | 6379           | 6379      | —                                   |
 
-Nginx in each portal reverse-proxies `/auth`, `/users`, and `/claims` to the backends, so the
-SPAs use relative API paths (no CORS). Both portals ship with `X-Frame-Options`,
+Nginx in each portal serves the SPA and reverse-proxies `/api/auth`, `/api/users` and `/api/claims`
+to the backends, stripping the `/api` prefix. The SPAs therefore call a same-origin API (no CORS), and
+API routes can never collide with SPA routes such as `/claims/:id`. Uploads of up to 12 MB pass through
+nginx; the API itself enforces the 10 MB limit. Both portals ship with `X-Frame-Options`,
 `X-Content-Type-Options`, `Referrer-Policy`, and a `Content-Security-Policy` header.
 
 ---

@@ -1,7 +1,8 @@
 import axios from 'axios'
 
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  // Same-origin API: nginx (and the Vite dev proxy) route /api/* to the backend services.
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
 })
 
 apiClient.interceptors.request.use((config) => {
