@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import select, func, text
@@ -59,20 +60,36 @@ class ClaimRepository:
         new_status: ClaimStatus,
         changed_by: uuid.UUID,
         note: Optional[str] = None,
+        assessed_amount: Optional[Decimal] = None,
+        approved_amount: Optional[Decimal] = None,
     ) -> Claim:
         old_status = claim.status
         claim.status = new_status
-        history = ClaimStatusHistory(
-            claim_id=claim.id,
-            from_status=old_status,
-            to_status=new_status,
-            changed_by=changed_by,
-            note=note,
-        )
-        self.db.add(history)
+        claim.assessed_amount = assessed_amount
+        claim.approved_amount = approved_amount
+        await self.add_history(claim.id, old_status, new_status, changed_by, note)
         await self.db.flush()
         await self.db.refresh(claim)
         return claim
+
+    async def add_history(
+        self,
+        claim_id: uuid.UUID,
+        from_status: Optional[ClaimStatus],
+        to_status: ClaimStatus,
+        changed_by: uuid.UUID,
+        note: Optional[str] = None,
+    ) -> None:
+        self.db.add(
+            ClaimStatusHistory(
+                claim_id=claim_id,
+                from_status=from_status,
+                to_status=to_status,
+                changed_by=changed_by,
+                note=note,
+            )
+        )
+        await self.db.flush()
 
     async def assign(
         self,
@@ -80,18 +97,12 @@ class ClaimRepository:
         assigned_to: uuid.UUID,
         changed_by: uuid.UUID,
         new_status: Optional[ClaimStatus],
+        note: Optional[str] = None,
     ) -> Claim:
         claim.assigned_to = assigned_to
         if new_status is not None:
-            history = ClaimStatusHistory(
-                claim_id=claim.id,
-                from_status=claim.status,
-                to_status=new_status,
-                changed_by=changed_by,
-                note=f"Assigned to {assigned_to}",
-            )
+            await self.add_history(claim.id, claim.status, new_status, changed_by, note)
             claim.status = new_status
-            self.db.add(history)
         await self.db.flush()
         await self.db.refresh(claim)
         return claim

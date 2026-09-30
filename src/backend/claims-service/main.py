@@ -14,7 +14,15 @@ from api.routers import claims as claims_router
 from api.routers import documents as documents_router
 from config import settings
 from dependencies.db import AsyncSessionLocal, engine
-from services.errors import ClaimsError, FileTooLarge, Forbidden, InvalidTransition, NotFound, UnsupportedFile
+from services.errors import (
+    BusinessRuleViolation,
+    ClaimsError,
+    FileTooLarge,
+    Forbidden,
+    InvalidTransition,
+    NotFound,
+    UnsupportedFile,
+)
 
 structlog.configure(
     processors=[
@@ -35,6 +43,7 @@ _HTTP_STATUS = {
     NotFound: 404,
     Forbidden: 403,
     InvalidTransition: 400,
+    BusinessRuleViolation: 400,
     UnsupportedFile: 415,
     FileTooLarge: 413,
 }

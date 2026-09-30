@@ -29,6 +29,8 @@ class ClaimResponse(BaseModel):
     incident_date: date
     incident_description: str
     claimed_amount: Decimal
+    assessed_amount: Decimal | None = None
+    approved_amount: Decimal | None = None
     status: ClaimStatus
     assigned_to: uuid.UUID | None
     assigned_staff_name: str | None = None
@@ -46,6 +48,16 @@ class ClaimListResponse(BaseModel):
 class StatusUpdateRequest(BaseModel):
     status: ClaimStatus
     note: str | None = None
+    # Required when moving to SURVEYED (assessed) or APPROVED (approved); rejected for any other status.
+    assessed_amount: Decimal | None = None
+    approved_amount: Decimal | None = None
+
+    @field_validator("assessed_amount", "approved_amount")
+    @classmethod
+    def positive_if_present(cls, v: Decimal | None) -> Decimal | None:
+        if v is not None and v <= 0:
+            raise ValueError("amount must be greater than 0")
+        return v
 
 
 class AssignRequest(BaseModel):

@@ -33,6 +33,9 @@ class Claim(Base):
     incident_date: Mapped[date] = mapped_column(Date, nullable=False)
     incident_description: Mapped[str] = mapped_column(Text, nullable=False)
     claimed_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    # Set by the surveyor (SURVEYED) and the adjustor (APPROVED); see services.claims_service.
+    assessed_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    approved_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     status: Mapped[ClaimStatus] = mapped_column(
         SAEnum(ClaimStatus, name="claim_status", create_type=False),
         nullable=False,

@@ -88,11 +88,17 @@ async def update_status(
 async def assign_claim(
     claim_id: uuid.UUID,
     body: AssignRequest,
+    request: Request,
     user: UserContext = Depends(require_role("CASE_MANAGER", "REGIONAL_MANAGER")),
+    token: str = Depends(get_bearer_token),
     db: AsyncSession = Depends(get_db),
 ):
-    claim = await claims_service.assign_claim(claim_id, body, user, db)
-    return ClaimResponse.model_validate(claim)
+    # The audit trail records who the claim went to by name, not by internal id.
+    directory = await _staff_directory(request, user, token)
+    claim = await claims_service.assign_claim(
+        claim_id, body, user, db, assignee_name=directory.get(str(body.assigned_to))
+    )
+    return _to_response(claim, directory)
 
 
 @router.get("/{claim_id}/history", response_model=list[HistoryEntry])

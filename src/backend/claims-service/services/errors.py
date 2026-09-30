@@ -23,6 +23,10 @@ class InvalidTransition(ClaimsError):
     """The requested status change is not allowed for this role from the current status."""
 
 
+class BusinessRuleViolation(ClaimsError):
+    """The request breaks a claims business rule (for example an approved amount above the claimed amount)."""
+
+
 class UnsupportedFile(ClaimsError):
     """The upload's extension or sniffed content type is not allowed."""
 

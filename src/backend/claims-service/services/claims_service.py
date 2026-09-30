@@ -1,16 +1,17 @@
-"""Business rules for the claim lifecycle: access control, the governed state machine and assignment.
+"""Business rules for the claim lifecycle: access control, the governed state machine, amounts and assignment.
 
 The API layer calls these functions and never touches repositories directly. Failures are raised as
 business errors (services/errors.py), which main.py maps to HTTP status codes.
 """
 import uuid
+from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.db_models import Claim, ClaimStatus, ClaimStatusHistory
 from models.schemas import AssignRequest, ClaimCreate, StatusUpdateRequest, UserContext
 from repositories.claim_repository import ClaimRepository
-from services.errors import Forbidden, InvalidTransition, NotFound
+from services.errors import BusinessRuleViolation, Forbidden, InvalidTransition, NotFound
 from services.notification_service import send_notification
 
 # Role-gated claim lifecycle: current status → role → statuses that role may move the claim to.
@@ -23,6 +24,11 @@ TRANSITIONS: dict[ClaimStatus, dict[str, set[ClaimStatus]]] = {
     ClaimStatus.APPROVED: {"ADJUSTOR": {ClaimStatus.PAID}},
 }
 
+# Statuses before the survey is complete: sending a claim back here clears its assessed amount.
+_BEFORE_SURVEY = {ClaimStatus.SUBMITTED, ClaimStatus.ASSIGNED, ClaimStatus.UNDER_SURVEY}
+# An approved amount only stands while the claim is approved or paid.
+_APPROVAL_STANDS = {ClaimStatus.APPROVED, ClaimStatus.PAID}
+
 
 def validate_transition(current: ClaimStatus, requested: ClaimStatus, role: str) -> None:
     if role == "CASE_MANAGER":
@@ -30,6 +36,37 @@ def validate_transition(current: ClaimStatus, requested: ClaimStatus, role: str)
     allowed = TRANSITIONS.get(current, {}).get(role, set())
     if requested not in allowed:
         raise InvalidTransition(f"Invalid state transition: {current} → {requested} not allowed for role {role}")
+
+
+def is_override(current: ClaimStatus, requested: ClaimStatus, role: str) -> bool:
+    """A case manager moving a claim anywhere other than along their own step of the workflow."""
+    return role == "CASE_MANAGER" and requested not in TRANSITIONS.get(current, {}).get(role, set())
+
+
+def _validate_amounts(claim: Claim, req: StatusUpdateRequest) -> None:
+    if req.assessed_amount is not None and req.status != ClaimStatus.SURVEYED:
+        raise BusinessRuleViolation("An assessed amount can only be set when the survey is completed (SURVEYED)")
+    if req.approved_amount is not None and req.status != ClaimStatus.APPROVED:
+        raise BusinessRuleViolation("An approved amount can only be set when the claim is approved (APPROVED)")
+    if req.status == ClaimStatus.SURVEYED and req.assessed_amount is None:
+        raise BusinessRuleViolation("An assessed amount is required to complete the survey")
+    if req.status == ClaimStatus.APPROVED:
+        if req.approved_amount is None:
+            raise BusinessRuleViolation("An approved amount is required to approve the claim")
+        if req.approved_amount > claim.claimed_amount:
+            raise BusinessRuleViolation(
+                f"The approved amount cannot exceed the claimed amount ({claim.claimed_amount})"
+            )
+
+
+def _amounts_after(claim: Claim, req: StatusUpdateRequest) -> tuple[Decimal | None, Decimal | None]:
+    assessed = req.assessed_amount if req.assessed_amount is not None else claim.assessed_amount
+    if req.status in _BEFORE_SURVEY:
+        assessed = None
+    approved = req.approved_amount if req.approved_amount is not None else claim.approved_amount
+    if req.status not in _APPROVAL_STANDS:
+        approved = None
+    return assessed, approved
 
 
 def ensure_can_access(user: UserContext, claim: Claim) -> None:
@@ -47,7 +84,18 @@ async def get_accessible_claim(claim_id: uuid.UUID, user: UserContext, db: Async
 
 
 async def submit_claim(body: ClaimCreate, user: UserContext, db: AsyncSession) -> Claim:
-    return await ClaimRepository(db).create(body, user.id)
+    repo = ClaimRepository(db)
+    claim = await repo.create(body, user.id)
+    # First notice of loss starts the audit trail.
+    await repo.add_history(claim.id, None, ClaimStatus.SUBMITTED, user.id, "Claim submitted")
+    await send_notification(
+        claim_id=claim.id,
+        recipient_id=user.id,
+        channel="internal",
+        message=f"Claim {claim.claim_number} received",
+        db=db,
+    )
+    return claim
 
 
 async def list_claims(user: UserContext, db: AsyncSession, skip: int, limit: int) -> tuple[list[Claim], int]:
@@ -70,8 +118,19 @@ async def update_status(
     claim = await repo.get_by_id(claim_id)
     if claim is None:
         raise NotFound("Claim not found")
+    if claim.status == ClaimStatus.PAID:
+        raise InvalidTransition("A paid claim is final and its status cannot change")
     validate_transition(claim.status, req.status, user.role)
-    updated = await repo.update_status(claim, req.status, user.id, req.note)
+
+    override = is_override(claim.status, req.status, user.role)
+    reason = (req.note or "").strip()
+    if override and not reason:
+        raise BusinessRuleViolation("A reason is required when a case manager overrides the workflow")
+    _validate_amounts(claim, req)
+
+    assessed, approved = _amounts_after(claim, req)
+    note = f"Case manager override: {reason}" if override else req.note
+    updated = await repo.update_status(claim, req.status, user.id, note, assessed, approved)
     await send_notification(
         claim_id=claim_id,
         recipient_id=updated.customer_id,
@@ -87,6 +146,7 @@ async def assign_claim(
     req: AssignRequest,
     user: UserContext,
     db: AsyncSession,
+    assignee_name: str | None = None,
 ) -> Claim:
     repo = ClaimRepository(db)
     claim = await repo.get_by_id(claim_id)
@@ -97,7 +157,8 @@ async def assign_claim(
         if user.role != "CASE_MANAGER":
             raise Forbidden("Only case managers can assign a submitted claim")
         new_status = ClaimStatus.ASSIGNED
-    updated = await repo.assign(claim, req.assigned_to, user.id, new_status)
+    note = f"Assigned to {assignee_name}" if assignee_name else "Assigned to a claims handler"
+    updated = await repo.assign(claim, req.assigned_to, user.id, new_status, note)
     if new_status is not None:
         await send_notification(
             claim_id=claim_id,
