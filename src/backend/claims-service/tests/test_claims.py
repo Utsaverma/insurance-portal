@@ -157,6 +157,7 @@ async def test_submit_claim_starts_audit_trail(client, customer_user):
     assert history[0]["from_status"] is None
     assert history[0]["to_status"] == "SUBMITTED"
     assert history[0]["changed_by"] == str(customer_user.id)
+    assert history[0]["changed_by_name"] == customer_user.email  # no full name on file, so the email
 
 
 @pytest.mark.asyncio
@@ -222,6 +223,45 @@ async def test_paid_claim_is_final(client, db_session, sample_claim, case_manage
         json={"status": "UNDER_ADJUDICATION", "note": "Reopen"},
     )
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_history_names_the_actor(client, sample_claim):
+    _act_as(UserContext(id=uuid.uuid4(), email="dana@test.com", role="CASE_MANAGER", full_name="Dana Brooks"))
+    resp = await client.patch(
+        f"/claims/{sample_claim.id}/status",
+        json={"status": "REJECTED", "note": "Duplicate of an existing claim"},
+    )
+    assert resp.status_code == 200
+    history = (await client.get(f"/claims/{sample_claim.id}/history")).json()
+    assert history[-1]["changed_by_name"] == "Dana Brooks"
+
+
+@pytest.mark.asyncio
+async def test_claim_is_paid_only_with_an_approved_amount(client, db_session, sample_claim, case_manager_user):
+    await _set_status(db_session, sample_claim, ClaimStatus.UNDER_ADJUDICATION)
+    _act_as(case_manager_user)
+    resp = await client.patch(
+        f"/claims/{sample_claim.id}/status",
+        json={"status": "PAID", "note": "Settle now"},
+    )
+    assert resp.status_code == 400
+    assert "approved amount" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_reassignment_is_audited_and_closed_claims_stay_put(client, db_session, sample_claim, case_manager_user):
+    _act_as(case_manager_user)
+    url = f"/claims/{sample_claim.id}/assign"
+
+    assert (await client.post(url, json={"assigned_to": str(uuid.uuid4())})).json()["status"] == "ASSIGNED"
+    assert (await client.post(url, json={"assigned_to": str(uuid.uuid4())})).status_code == 200
+    history = (await client.get(f"/claims/{sample_claim.id}/history")).json()
+    assert [h["note"] for h in history] == ["Assigned to a claims handler", "Reassigned to a claims handler"]
+    assert history[-1]["from_status"] == history[-1]["to_status"] == "ASSIGNED"
+
+    await _set_status(db_session, sample_claim, ClaimStatus.PAID)
+    assert (await client.post(url, json={"assigned_to": str(uuid.uuid4())})).status_code == 400
 
 
 @pytest.mark.asyncio

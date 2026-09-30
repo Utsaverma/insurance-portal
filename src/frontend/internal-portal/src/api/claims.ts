@@ -9,7 +9,12 @@ export interface ClaimFilterParams {
 
 export interface StatusUpdateBody {
   status: string
+  /** Required (as the reason) when a case manager overrides the workflow. */
   note?: string
+  /** Required with SURVEYED; the server rejects it with any other status. */
+  assessed_amount?: string | number
+  /** Required with APPROVED (> 0, ≤ claimed); rejected with any other status. */
+  approved_amount?: string | number
 }
 
 export const listClaims = async (params?: ClaimFilterParams): Promise<{ items: Claim[]; total: number }> => {
@@ -29,6 +34,11 @@ export const updateClaimStatus = async (id: string, body: StatusUpdateBody): Pro
 
 export const assignClaim = async (id: string, assignedTo: string): Promise<Claim> => {
   const res = await apiClient.post<Claim>(`/claims/${id}/assign`, { assigned_to: assignedTo })
+  return res.data
+}
+
+export const getClaimHistory = async (id: string): Promise<ClaimHistoryEntry[]> => {
+  const res = await apiClient.get<ClaimHistoryEntry[]>(`/claims/${id}/history`)
   return res.data
 }
 

@@ -62,12 +62,13 @@ class ClaimRepository:
         note: Optional[str] = None,
         assessed_amount: Optional[Decimal] = None,
         approved_amount: Optional[Decimal] = None,
+        changed_by_name: Optional[str] = None,
     ) -> Claim:
         old_status = claim.status
         claim.status = new_status
         claim.assessed_amount = assessed_amount
         claim.approved_amount = approved_amount
-        await self.add_history(claim.id, old_status, new_status, changed_by, note)
+        await self.add_history(claim.id, old_status, new_status, changed_by, note, changed_by_name)
         await self.db.flush()
         await self.db.refresh(claim)
         return claim
@@ -79,6 +80,7 @@ class ClaimRepository:
         to_status: ClaimStatus,
         changed_by: uuid.UUID,
         note: Optional[str] = None,
+        changed_by_name: Optional[str] = None,
     ) -> None:
         self.db.add(
             ClaimStatusHistory(
@@ -86,6 +88,7 @@ class ClaimRepository:
                 from_status=from_status,
                 to_status=to_status,
                 changed_by=changed_by,
+                changed_by_name=changed_by_name,
                 note=note,
             )
         )
@@ -98,11 +101,13 @@ class ClaimRepository:
         changed_by: uuid.UUID,
         new_status: Optional[ClaimStatus],
         note: Optional[str] = None,
+        changed_by_name: Optional[str] = None,
     ) -> Claim:
         claim.assigned_to = assigned_to
-        if new_status is not None:
-            await self.add_history(claim.id, claim.status, new_status, changed_by, note)
-            claim.status = new_status
+        # Every assignment is audited. A reassignment keeps the status, so its from and to are the same.
+        to_status = new_status or claim.status
+        await self.add_history(claim.id, claim.status, to_status, changed_by, note, changed_by_name)
+        claim.status = to_status
         await self.db.flush()
         await self.db.refresh(claim)
         return claim

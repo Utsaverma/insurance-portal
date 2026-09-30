@@ -67,6 +67,8 @@ class ClaimStatusHistory(Base):
     from_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     to_status: Mapped[str] = mapped_column(String(50), nullable=False)
     changed_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    # The actor's name as it was when they acted, so the audit record never depends on a later lookup.
+    changed_by_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     changed_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 

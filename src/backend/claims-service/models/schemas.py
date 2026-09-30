@@ -83,6 +83,7 @@ class HistoryEntry(BaseModel):
     from_status: str | None
     to_status: str
     changed_by: uuid.UUID
+    changed_by_name: str | None = None
     changed_at: datetime
     note: str | None
 

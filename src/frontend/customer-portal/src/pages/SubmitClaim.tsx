@@ -52,8 +52,9 @@ export function SubmitClaim() {
               {[
                 { label: 'Policy Number', name: 'policy_number', type: 'text' },
                 { label: 'Incident Date', name: 'incident_date', type: 'date', max: today },
-                { label: 'Claimed Amount (₹)', name: 'claimed_amount', type: 'number' },
-              ].map(({ label, name, type, max }) => (
+                // step: without it a number input only accepts whole dollars.
+                { label: 'Claimed Amount (USD)', name: 'claimed_amount', type: 'number', min: '0.01', step: '0.01' },
+              ].map(({ label, name, type, max, min, step }) => (
                 <Input
                   key={name}
                   label={label}
@@ -61,6 +62,8 @@ export function SubmitClaim() {
                   name={name}
                   value={(form as Record<string, string>)[name]}
                   max={max}
+                  min={min}
+                  step={step}
                   onChange={handleChange}
                   required
                 />

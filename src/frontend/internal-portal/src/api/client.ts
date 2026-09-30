@@ -23,4 +23,17 @@ apiClient.interceptors.response.use(
   }
 )
 
+/** A readable message from a failed call. FastAPI sends `detail` as a string for
+ *  business-rule errors (400/403/404) but as a list of `{msg}` objects for request
+ *  validation errors (422), and React cannot render that list as-is. */
+export function apiErrorMessage(err: unknown, fallback: string): string {
+  const detail = axios.isAxiosError(err) ? err.response?.data?.detail : undefined
+  if (typeof detail === 'string' && detail) return detail
+  if (Array.isArray(detail)) {
+    const msgs = detail.map((d) => d?.msg).filter((m): m is string => typeof m === 'string')
+    if (msgs.length) return msgs.join(' ')
+  }
+  return fallback
+}
+
 export default apiClient

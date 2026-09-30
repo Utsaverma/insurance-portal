@@ -4,7 +4,7 @@ import { FileText, Plus } from 'lucide-react'
 import { getClaims, type Claim } from '../api/claims'
 import { ClaimStatusBadge } from '../components/ClaimStatusBadge'
 import { CONTENT_WIDTH } from '../components/layout/shell'
-import { formatINR, formatDate } from '../lib/format'
+import { formatCurrency, formatDate } from '../lib/format'
 import {
   Button,
   Card,
@@ -55,7 +55,7 @@ export function Dashboard() {
           <StatCard label="In progress" value={stats.open} size="lg" numeric tone="brand" />
           <StatCard
             label="Total claimed"
-            value={formatINR(stats.total)}
+            value={formatCurrency(stats.total)}
             size="lg"
             numeric
             className="col-span-2 sm:col-span-1"
@@ -96,7 +96,13 @@ export function Dashboard() {
                 <ClaimStatusBadge status={c.status} />
               </div>
               <div className="mt-2 text-sm font-medium text-fg tabular-nums">
-                {formatINR(c.claimed_amount)}
+                {formatCurrency(c.claimed_amount)}
+                {(c.status === 'APPROVED' || c.status === 'PAID') && (
+                  <span className="font-normal text-fg-muted">
+                    {' · '}Approved amount{' '}
+                    <span className="font-medium text-fg">{formatCurrency(c.approved_amount)}</span>
+                  </span>
+                )}
               </div>
             </Link>
           </Card>

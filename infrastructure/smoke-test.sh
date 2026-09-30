@@ -123,10 +123,15 @@ expect 201 "customer submits a second claim" -X POST "$API/claims" -H "Authoriza
   -d '{"policy_number":"AUTO-900001","incident_date":"2026-09-29","incident_description":"Smoke test: duplicate report of the same incident.","claimed_amount":1200}'
 SECOND=$(json "d['id']")
 patch_status 400 "an override needs a reason" "$CM" "$SECOND" '{"status":"REJECTED"}'
+patch_status 400 "no claim is paid without an approved amount" "$CM" "$SECOND" '{"status":"PAID","note":"Pay now"}'
 patch_status 200 "case manager overrides with a reason" "$CM" "$SECOND" '{"status":"REJECTED","note":"Duplicate of an existing claim"}'
 expect 200 "override is in the audit trail" "$API/claims/$SECOND/history" -H "Authorization: Bearer $CM"
 [[ "$(json "d[-1]['note']")" == "Case manager override: "* ]] && pass "history records the override and its reason" \
   || fail "override not recorded: $(json "d[-1]['note']")"
+[ "$(json "d[-1]['changed_by_name']")" = "David Case" ] && pass "history names who made the override" \
+  || fail "override actor recorded as $(json "d[-1]['changed_by_name']")"
+expect 400 "a closed claim cannot be reassigned" -X POST "$API/claims/$SECOND/assign" \
+  -H "Authorization: Bearer $CM" -H 'Content-Type: application/json' -d "{\"assigned_to\":\"$SURVEYOR_ID\"}"
 
 echo "=== Health ==="
 expect 200 "auth-service health" "$BASE_AUTH/health"

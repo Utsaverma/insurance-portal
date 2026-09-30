@@ -58,13 +58,14 @@ CREATE TABLE IF NOT EXISTS claim_documents (
 );
 
 CREATE TABLE IF NOT EXISTS claim_status_history (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  claim_id    UUID NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
-  changed_by  UUID NOT NULL REFERENCES users(id),
-  from_status TEXT,
-  to_status   TEXT NOT NULL,
-  note        TEXT,
-  changed_at  TIMESTAMPTZ DEFAULT NOW()
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  claim_id        UUID NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
+  changed_by      UUID NOT NULL REFERENCES users(id),
+  changed_by_name TEXT,  -- the actor's name when they acted, so the record never depends on a later lookup
+  from_status     TEXT,
+  to_status       TEXT NOT NULL,
+  note            TEXT,
+  changed_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS notifications (
@@ -194,4 +195,7 @@ BEGIN
     (c, adjustor, 'SURVEYED',           'UNDER_ADJUDICATION', 'Checking glass cover',                             '2026-07-10 09:45+00'),
     (c, adjustor, 'UNDER_ADJUDICATION', 'APPROVED',           'Approved in full; glass cover has no deductible',  '2026-07-13 14:20+00'),
     (c, adjustor, 'APPROVED',           'PAID',               'Paid to the partner workshop',                     '2026-07-20 11:00+00');
+
+  -- The seeded audit trail names its actors, as the service does for every new entry.
+  UPDATE claim_status_history h SET changed_by_name = u.full_name FROM users u WHERE u.id = h.changed_by;
 END $$;

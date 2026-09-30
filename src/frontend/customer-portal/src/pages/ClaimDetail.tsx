@@ -9,7 +9,8 @@ import { ClaimStatusBadge } from '../components/ClaimStatusBadge'
 import { StatusTimeline } from '../components/StatusTimeline'
 import { DocumentList, type DocumentListItem } from '../components/DocumentList'
 import { CONTENT_WIDTH } from '../components/layout/shell'
-import { formatINR, formatDate } from '../lib/format'
+import { cn } from '../lib/cn'
+import { formatCurrency, formatDate } from '../lib/format'
 import {
   Card,
   CardBody,
@@ -65,6 +66,9 @@ export function ClaimDetail() {
     )
   }
 
+  // The approved amount only exists while the claim is approved or paid.
+  const showApproved = claim.status === 'APPROVED' || claim.status === 'PAID'
+
   return (
     <PageContainer width={CONTENT_WIDTH}>
       <PageHeader
@@ -75,15 +79,23 @@ export function ClaimDetail() {
       />
 
       <div className="space-y-8">
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className={cn('grid grid-cols-2 gap-3', showApproved ? 'md:grid-cols-5' : 'md:grid-cols-4')}>
           <StatCard label="Policy" value={claim.policy_number} size="sm" />
           <StatCard label="Incident Date" value={formatDate(claim.incident_date)} size="sm" numeric />
           <StatCard
             label="Claimed Amount"
-            value={formatINR(claim.claimed_amount)}
+            value={formatCurrency(claim.claimed_amount)}
             size="sm"
             numeric
           />
+          {showApproved && (
+            <StatCard
+              label="Approved Amount"
+              value={formatCurrency(claim.approved_amount)}
+              size="sm"
+              numeric
+            />
+          )}
           <StatCard
             label="Submitted"
             value={formatDate(claim.created_at)}

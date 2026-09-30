@@ -28,6 +28,13 @@ TRANSITIONS: dict[ClaimStatus, dict[str, set[ClaimStatus]]] = {
 _BEFORE_SURVEY = {ClaimStatus.SUBMITTED, ClaimStatus.ASSIGNED, ClaimStatus.UNDER_SURVEY}
 # An approved amount only stands while the claim is approved or paid.
 _APPROVAL_STANDS = {ClaimStatus.APPROVED, ClaimStatus.PAID}
+# Closed claims keep their last assignment; a rejected claim is reopened by a case-manager override first.
+_CLOSED = {ClaimStatus.PAID, ClaimStatus.REJECTED}
+
+
+def _actor(user: UserContext) -> str:
+    """How the audit trail names whoever acted."""
+    return user.full_name or user.email
 
 
 def validate_transition(current: ClaimStatus, requested: ClaimStatus, role: str) -> None:
@@ -57,6 +64,9 @@ def _validate_amounts(claim: Claim, req: StatusUpdateRequest) -> None:
             raise BusinessRuleViolation(
                 f"The approved amount cannot exceed the claimed amount ({claim.claimed_amount})"
             )
+    # Payment settles the approved amount, so there must be one: PAID is reachable only from APPROVED.
+    if req.status == ClaimStatus.PAID and claim.approved_amount is None:
+        raise BusinessRuleViolation("A claim can only be paid once it has an approved amount")
 
 
 def _amounts_after(claim: Claim, req: StatusUpdateRequest) -> tuple[Decimal | None, Decimal | None]:
@@ -87,7 +97,7 @@ async def submit_claim(body: ClaimCreate, user: UserContext, db: AsyncSession) -
     repo = ClaimRepository(db)
     claim = await repo.create(body, user.id)
     # First notice of loss starts the audit trail.
-    await repo.add_history(claim.id, None, ClaimStatus.SUBMITTED, user.id, "Claim submitted")
+    await repo.add_history(claim.id, None, ClaimStatus.SUBMITTED, user.id, "Claim submitted", _actor(user))
     await send_notification(
         claim_id=claim.id,
         recipient_id=user.id,
@@ -130,7 +140,9 @@ async def update_status(
 
     assessed, approved = _amounts_after(claim, req)
     note = f"Case manager override: {reason}" if override else req.note
-    updated = await repo.update_status(claim, req.status, user.id, note, assessed, approved)
+    updated = await repo.update_status(
+        claim, req.status, user.id, note, assessed, approved, changed_by_name=_actor(user)
+    )
     await send_notification(
         claim_id=claim_id,
         recipient_id=updated.customer_id,
@@ -152,13 +164,16 @@ async def assign_claim(
     claim = await repo.get_by_id(claim_id)
     if claim is None:
         raise NotFound("Claim not found")
+    if claim.status in _CLOSED:
+        raise InvalidTransition("Closed claims (paid or rejected) cannot be reassigned")
     new_status = None
     if claim.status == ClaimStatus.SUBMITTED:
         if user.role != "CASE_MANAGER":
             raise Forbidden("Only case managers can assign a submitted claim")
         new_status = ClaimStatus.ASSIGNED
-    note = f"Assigned to {assignee_name}" if assignee_name else "Assigned to a claims handler"
-    updated = await repo.assign(claim, req.assigned_to, user.id, new_status, note)
+    verb = "Assigned" if new_status is not None else "Reassigned"
+    note = f"{verb} to {assignee_name}" if assignee_name else f"{verb} to a claims handler"
+    updated = await repo.assign(claim, req.assigned_to, user.id, new_status, note, changed_by_name=_actor(user))
     if new_status is not None:
         await send_notification(
             claim_id=claim_id,
