@@ -143,15 +143,18 @@ insurance-portal/
 From the repository root:
 
 ```bash
-# 1. Create your environment file and set a JWT secret
-cp .env.example .env
-# Edit .env and set JWT_SECRET_KEY, e.g.:
-#   python -c "import secrets; print(secrets.token_hex(32))"
+# 1. Create the environment file where Docker Compose reads it (infrastructure/.env),
+#    then set JWT_SECRET_KEY to at least 32 characters
+cp infrastructure/.env.example infrastructure/.env
+python3 -c "import secrets; print(secrets.token_hex(32))"   # paste the output into JWT_SECRET_KEY
 
 # 2. Build and start the full stack
 cd infrastructure
 docker compose up --build --wait
 ```
+
+> Port already in use? Set `CUSTOMER_PORTAL_PORT`, `INTERNAL_PORTAL_PORT`, `AUTH_PORT` or `CLAIMS_PORT`
+> in `infrastructure/.env` (defaults 3000, 3001, 8001, 8002).
 
 Once all six containers report healthy:
 
@@ -351,7 +354,7 @@ required. There is also an end-to-end smoke test at `infrastructure/smoke-test.s
 
 ## Configuration
 
-Root `.env` (consumed by Docker Compose) — see `.env.example`:
+`infrastructure/.env` (the only file Docker Compose reads) — see `infrastructure/.env.example`:
 
 | Variable            | Description                                            |
 |---------------------|--------------------------------------------------------|
@@ -359,10 +362,12 @@ Root `.env` (consumed by Docker Compose) — see `.env.example`:
 | `POSTGRES_PASSWORD` | PostgreSQL password                                    |
 | `POSTGRES_DB`       | PostgreSQL database name                               |
 | `DATABASE_URL`      | Async SQLAlchemy connection string                     |
-| `JWT_SECRET_KEY`    | **Required** — HMAC secret for signing JWTs            |
+| `JWT_SECRET_KEY`    | **Required** — HMAC secret for signing JWTs (≥ 32 characters; the auth service refuses to start otherwise) |
 | `JWT_ALGORITHM`     | JWT algorithm (default `HS256`)                        |
-| `AUTH_SERVICE_URL`  | Internal URL claims-service uses to validate tokens    |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Access-token lifetime (POC default 120, long enough for a full demo) |
+| `AUTH_SERVICE_URL`  | Internal URL claims-service uses to validate tokens (default `http://auth-service:8000`) |
 | `REDIS_URL`         | Redis connection string                                |
+| `CUSTOMER_PORTAL_PORT` · `INTERNAL_PORTAL_PORT` · `AUTH_PORT` · `CLAIMS_PORT` | Host ports (defaults 3000 · 3001 · 8001 · 8002) |
 
 Per-service `.env.example` files add service-specific settings (token lifetimes, upload dir,
 max file size, allowed MIME types, cache TTL, log level).
