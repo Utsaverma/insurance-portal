@@ -12,7 +12,7 @@ from models.db_models import Claim, ClaimStatus, ClaimStatusHistory
 from models.schemas import AllowedActions, AssignRequest, ClaimCreate, StaffMember, StatusUpdateRequest, UserContext
 from repositories.claim_repository import ClaimRepository
 from services.errors import BusinessRuleViolation, Forbidden, InvalidTransition, NotFound
-from services.notification_service import send_notification
+from services.notification_service import notify
 from services.workflow_policy import ASSIGN, OVERRIDE, REASSIGN, UPLOAD, WORK, WorkflowPolicy
 
 # Who may take which step, and who holds which permission, is the workflow policy (services.workflow_policy),
@@ -29,6 +29,23 @@ _CLOSED = {ClaimStatus.PAID, ClaimStatus.REJECTED}
 def _actor(user: UserContext) -> str:
     """How the audit trail names whoever acted."""
     return user.full_name or user.email
+
+
+def _status_label(status: ClaimStatus) -> str:
+    return status.replace("_", " ").lower()
+
+
+def _status_notice(claim: Claim, reason: str) -> tuple[str, str]:
+    """The subject and message a customer gets when their claim changes status."""
+    label = _status_label(claim.status)
+    message = f"Your claim {claim.claim_number} is now {label}."
+    if claim.status == ClaimStatus.APPROVED:
+        message += f" Approved amount: ${claim.approved_amount:,.2f}."
+    elif claim.status == ClaimStatus.PAID:
+        message += f" ${claim.approved_amount:,.2f} has been paid."
+    elif claim.status == ClaimStatus.REJECTED and reason:
+        message += f" Reason: {reason}"
+    return f"Your claim {claim.claim_number} is now {label}", message
 
 
 def validate_transition(current: ClaimStatus, requested: ClaimStatus, role: str, policy: WorkflowPolicy) -> None:
@@ -163,12 +180,15 @@ async def submit_claim(body: ClaimCreate, user: UserContext, db: AsyncSession) -
     claim = await repo.create(body, user.id)
     # First notice of loss starts the audit trail.
     await repo.add_history(claim.id, None, ClaimStatus.SUBMITTED, user.id, "Claim submitted", _actor(user))
-    await send_notification(
-        claim_id=claim.id,
+    await notify(
+        db,
+        claim=claim,
         recipient_id=user.id,
-        channel="internal",
-        message=f"Claim {claim.claim_number} received",
-        db=db,
+        subject=f"We received your claim {claim.claim_number}",
+        message=(
+            f"We received your claim {claim.claim_number} for ${claim.claimed_amount:,.2f}. "
+            "We will let you know as it progresses."
+        ),
     )
     return claim
 
@@ -223,13 +243,8 @@ async def update_status(
         changed_by_name=_actor(user),
         assigned_to=_assignee_after(claim, req, user, policy),
     )
-    await send_notification(
-        claim_id=claim_id,
-        recipient_id=updated.customer_id,
-        channel="internal",
-        message=f"Claim {updated.claim_number} status changed to {req.status}",
-        db=db,
-    )
+    subject, message = _status_notice(updated, reason)
+    await notify(db, claim=updated, recipient_id=updated.customer_id, subject=subject, message=message)
     return updated
 
 
@@ -262,12 +277,15 @@ async def assign_claim(
     verb = "Assigned" if new_status is not None or claim.assigned_to is None else "Reassigned"
     note = f"{verb} to {assignee.name}"
     updated = await repo.assign(claim, req.assigned_to, user.id, new_status, note, changed_by_name=_actor(user))
+    await notify(
+        db,
+        claim=updated,
+        recipient_id=req.assigned_to,
+        subject=f"Claim {updated.claim_number} is assigned to you",
+        message=f"{_actor(user)} assigned claim {updated.claim_number} ({_status_label(updated.status)}) to you.",
+        audience="staff",
+    )
     if new_status is not None:
-        await send_notification(
-            claim_id=claim_id,
-            recipient_id=updated.customer_id,
-            channel="internal",
-            message=f"Claim {updated.claim_number} status changed to {new_status}",
-            db=db,
-        )
+        subject, message = _status_notice(updated, "")
+        await notify(db, claim=updated, recipient_id=updated.customer_id, subject=subject, message=message)
     return updated

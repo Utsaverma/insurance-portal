@@ -11,13 +11,14 @@ set -euo pipefail
 if [ -f .env ]; then
   while IFS='=' read -r key value; do
     [ -z "${!key:-}" ] && export "$key=$value"
-  done < <(grep -E '^(CUSTOMER_PORTAL_PORT|INTERNAL_PORTAL_PORT|AUTH_PORT|CLAIMS_PORT)=' .env || true)
+  done < <(grep -E '^(CUSTOMER_PORTAL_PORT|INTERNAL_PORTAL_PORT|AUTH_PORT|CLAIMS_PORT|MAIL_UI_PORT)=' .env || true)
 fi
 CUSTOMER_PORTAL="http://localhost:${CUSTOMER_PORTAL_PORT:-3000}"
 INTERNAL_PORTAL="http://localhost:${INTERNAL_PORTAL_PORT:-3001}"
 API="$CUSTOMER_PORTAL/api"
 BASE_AUTH="http://localhost:${AUTH_PORT:-8001}"
 BASE_CLAIMS="http://localhost:${CLAIMS_PORT:-8002}"
+MAIL_UI="http://localhost:${MAIL_UI_PORT:-8025}"
 
 BODY=$(mktemp); FILE=$(mktemp)
 trap 'rm -f "$BODY" "$FILE"' EXIT
@@ -154,6 +155,21 @@ expect 200 "override is in the audit trail" "$API/claims/$SECOND/history" -H "Au
   || fail "override actor recorded as $(json "d[-1]['changed_by_name']")"
 expect 400 "a closed claim cannot be reassigned" -X POST "$API/claims/$SECOND/assign" \
   -H "Authorization: Bearer $CM" -H 'Content-Type: application/json' -d "{\"assigned_to\":\"$SURVEYOR_ID\"}"
+
+echo "=== Notifications ==="
+# The dispatcher delivers the outbox asynchronously, so give the last email a few seconds to land in Mailpit.
+mail_count() {
+  curl -s -G "$MAIL_UI/api/v1/search" --data-urlencode "query=$1" \
+    | python3 -c "import json,sys; print(json.load(sys.stdin)['messages_count'])" 2>/dev/null || echo 0
+}
+for _ in $(seq 1 20); do
+  [ "$(mail_count "to:$SMOKE_EMAIL subject:\"is now paid\"")" -ge 1 ] && break
+  sleep 1
+done
+[ "$(mail_count "to:$SMOKE_EMAIL subject:\"is now paid\"")" -ge 1 ] && pass "the customer is emailed when the claim is paid (outbox → dispatcher → $MAIL_UI)" \
+  || fail "no 'is now paid' email to $SMOKE_EMAIL in Mailpit; check: docker compose logs notification-dispatcher"
+[ "$(mail_count "to:surveyor@test.com subject:\"is assigned to you\"")" -ge 1 ] && pass "the surveyor is emailed about the assignment" \
+  || fail "no assignment email to surveyor@test.com in Mailpit"
 
 echo "=== Reports ==="
 expect 200 "case manager reads the claims count" "$API/claims?limit=1" -H "Authorization: Bearer $CM"

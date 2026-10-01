@@ -1,4 +1,3 @@
-import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -15,6 +14,7 @@ from api.routers import documents as documents_router
 from api.routers import reports as reports_router
 from config import settings
 from dependencies.db import AsyncSessionLocal, engine
+from logging_config import configure_logging
 from services.errors import (
     BusinessRuleViolation,
     ClaimsError,
@@ -26,17 +26,7 @@ from services.errors import (
 )
 from services.workflow_policy import load_policy
 
-structlog.configure(
-    processors=[
-        structlog.contextvars.merge_contextvars,
-        structlog.stdlib.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.JSONRenderer(),
-    ],
-    wrapper_class=structlog.make_filtering_bound_logger(getattr(logging, settings.log_level.upper(), logging.INFO)),
-    context_class=dict,
-    logger_factory=structlog.PrintLoggerFactory(),
-)
+configure_logging()
 
 log = structlog.get_logger(__name__)
 

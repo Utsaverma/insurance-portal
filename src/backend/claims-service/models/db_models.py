@@ -3,8 +3,9 @@ from datetime import datetime, date
 from decimal import Decimal
 from enum import StrEnum
 
-from sqlalchemy import String, Numeric, Text, Boolean, Date, Enum as SAEnum, func, BigInteger
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import JSON, BigInteger, Boolean, Date, DateTime, Integer, Numeric, String, Text, func
+from sqlalchemy import Enum as SAEnum
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped
 
 
@@ -105,3 +106,23 @@ class RolePermission(Base):
 
     role: Mapped[str] = mapped_column(String(50), primary_key=True)
     permission: Mapped[str] = mapped_column(String(50), primary_key=True)
+
+
+class OutboxEvent(Base):
+    """An event waiting for the dispatcher (workers/outbox_dispatcher.py). It is written in the same transaction
+    as the change that raised it, so it exists exactly when that change committed."""
+    __tablename__ = "outbox_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # notification.email or notification.sms
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    aggregate_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    payload: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    # pending → sent; or dead once the last allowed attempt has failed (the dead-letter state).
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Not picked up before this time: the retry backoff.
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)

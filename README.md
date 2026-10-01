@@ -69,7 +69,10 @@ the four core eClaims capabilities via a single `docker compose up`. See
   (their name at the time), when, and the note or override reason
 - Login **rate limiting** and structured **JSON logging** with request-ID correlation across services
 - Redis cache for the staff directory, so staff views don't call the auth service on every request
-- Notification **stub**: each status change is logged and persisted to the `notifications` table, not delivered
+- **Notifications through a transactional outbox**: each status change stores an in-app notification and writes
+  email and SMS events in the same transaction. A separate dispatcher delivers them at least once, with
+  `SKIP LOCKED`, exponential backoff and a dead-letter state. Email goes to a local Mailpit inbox; SMS is logged.
+  Staff are emailed when a claim is assigned to them
 - Health-checked containers with restart policies, a seeded database, and nginx with security headers
 
 ---
@@ -101,6 +104,10 @@ service's `/users/me` endpoint. Both are deliberate POC simplifications; see
         │   :5432   │            │  (shared) │  │  :6379  │
         └───────────┘            └───────────┘  └─────────┘
 ```
+
+Notifications leave through a **transactional outbox**. The claims service writes notification events to the
+`outbox_events` table in the same transaction as the claim change. The `notification-dispatcher` worker (same
+image, `python -m workers.outbox_dispatcher`) delivers them: email over SMTP to Mailpit, SMS to the log.
 
 **Backend layering** (claims-service; auth-service uses the same folders):
 - `api/routers`: HTTP only. Parse the request, delegate to a service, shape the response.
@@ -136,7 +143,7 @@ insurance-portal/
 ├─ .github/workflows/ci.yml      # CI: pytest, portal builds, shared-file and compose checks
 ├─ infrastructure/
 │  ├─ .env.example               # environment template; copy to infrastructure/.env
-│  ├─ docker-compose.yml         # orchestrates all 6 containers
+│  ├─ docker-compose.yml         # orchestrates all 8 containers
 │  ├─ db/init.sql                # schema + seed data (users, claims, history)
 │  ├─ nginx/                     # per-portal Nginx configs (proxy + security headers)
 │  └─ smoke-test.sh              # end-to-end smoke test
@@ -180,9 +187,10 @@ docker compose up --build --wait
 ```
 
 > Port already in use? Set `CUSTOMER_PORTAL_PORT`, `INTERNAL_PORTAL_PORT`, `AUTH_PORT`, `CLAIMS_PORT`,
-> `POSTGRES_PORT` or `REDIS_PORT` in `infrastructure/.env` (defaults 3000, 3001, 8001, 8002, 5432, 6379).
+> `POSTGRES_PORT`, `REDIS_PORT` or `MAIL_UI_PORT` in `infrastructure/.env` (defaults 3000, 3001, 8001, 8002, 5432,
+> 6379, 8025).
 
-Once all six containers report healthy:
+Once the containers report healthy:
 
 | Service          | URL                                  |
 |------------------|--------------------------------------|
@@ -192,10 +200,12 @@ Once all six containers report healthy:
 | Claims service   | http://localhost:8002/docs (Swagger) |
 | PostgreSQL       | localhost:5432                       |
 | Redis            | localhost:6379                       |
+| Mail (Mailpit)   | http://localhost:8025 (every notification email lands here) |
 
 > The database is seeded automatically from `infrastructure/db/init.sql` on first start: 6 users and 6 sample
 > auto claims, one per key status, each with a legal status history. `init.sql` runs only on an empty database,
-> so reset with `docker compose down -v` after changing it.
+> so reset with `docker compose down -v` after changing it. To keep your data instead, re-apply it: it only adds
+> what is missing (`docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/init.sql`).
 
 **End-to-end walkthrough** (the demo path; `infrastructure/smoke-test.sh` automates the same journey through the API):
 1. **Customer portal**: log in as `customer@test.com` / `Test1234!` and submit a claim with a photo or police report
@@ -207,6 +217,9 @@ Once all six containers report healthy:
 5. Back in the **customer portal**: the claim shows **APPROVED** with the approved amount and its full timeline.
 6. Log in as `auditor@test.com` and open any claim to see its audit trail.
 7. Log in as `casemanager@test.com` and reopen the seeded **REJECTED** claim with an override (a reason is required).
+8. Open Mailpit at http://localhost:8025: the customer was emailed at every status change, and the surveyor when
+   the claim was assigned. To see at-least-once delivery, run `docker compose stop notification-dispatcher`,
+   change a status, then `docker compose start notification-dispatcher`. The email still arrives.
 
 Tear down with `docker compose down` (add `-v` to also drop the database and upload volumes).
 
@@ -243,6 +256,8 @@ staff. The other kind of account is told which portal to use.
 | internal-portal  | 80             | **3001**  | auth-service, claims-service        |
 | postgres         | 5432           | 5432      | —                                   |
 | redis            | 6379           | 6379      | —                                   |
+| notification-dispatcher | —       | —         | postgres, mail (claims-service image, `python -m workers.outbox_dispatcher`) |
+| mail (Mailpit)   | 1025 (SMTP), 8025 (UI) | **8025** | —                                |
 
 Nginx in each portal serves the SPA and reverse-proxies `/api/auth`, `/api/users` and `/api/claims`
 to the backends, stripping the `/api` prefix. The SPAs therefore call a same-origin API (no CORS), and
@@ -424,7 +439,7 @@ Two rules that are easy to break and only fail in the production build:
 # After changing code, rebuild first: docker compose build auth-service claims-service
 cd infrastructure
 docker compose run --rm --no-deps auth-service python -m pytest -q     # 19 tests
-docker compose run --rm --no-deps claims-service python -m pytest -q   # 59 tests (the init.sql seed check is skipped in the image; CI runs it)
+docker compose run --rm --no-deps claims-service python -m pytest -q   # 64 tests (the init.sql seed check is skipped in the image; CI runs it)
 ```
 
 Tests use an in-memory SQLite database, a fake Redis and a stubbed auth-service call, so no other
@@ -509,7 +524,7 @@ The POC is a *minimal working* slice of the architecture in `docs/sad/solution-a
 | Auth Service with Okta SSO; tokens validated locally | `auth-service`: HS256 JWT access and refresh tokens. claims-service validates every request by calling `/users/me` | Simple, and role changes take effect immediately; the cost is one extra hop per request |
 | Claims Service + Workflow Engine (Step Functions) | In-service, role-gated state machine in `services/claims_service.py` | The baseline option in the Orchestration DAR. The rules live in one module, so moving to an engine changes orchestration, not business logic |
 | User/RBAC + Configuration Service | Workflow steps and role permissions in two claims-service tables, read through a 30 s Redis cache; no admin UI yet (edited with SQL) | The rules are configurable now; a configuration service and an admin UI only change where they are edited |
-| Event bus + Notification Service (SNS, SES) | Notification stub: logged and persisted | No external providers |
+| Event bus + Notification Service (SNS, SES) | Transactional outbox in PostgreSQL + `notification-dispatcher` worker; email to Mailpit over SMTP, SMS logged | Same delivery guarantees (at-least-once, retries, dead letters) without cloud providers; in the target the dispatcher publishes to the bus instead |
 | Document Service (S3 + OpenSearch) | Validated uploads on a local volume | Local, single host |
 | Separate Claims and User databases (RDS PostgreSQL) | One PostgreSQL instance shared by both services | Fewer moving parts |
 | ElastiCache Redis | Redis caching the staff directory | — |
@@ -525,7 +540,7 @@ This is a **POC**. The following are intentionally out of scope and deferred to 
 implementation (see `docs/sad/` for the architecture and rationale):
 
 - Payment integration (Stripe): not implemented; PAID is a status the adjustor sets
-- Real SMS / email delivery: notifications are logged and persisted, not sent
+- Real SMS delivery and a production mail provider: email goes to the local Mailpit inbox, SMS is only logged
 - Partner workshop portal, workshop selection and appointment booking
 - Auto-assignment of staff by geography / availability
 - Rental car booking

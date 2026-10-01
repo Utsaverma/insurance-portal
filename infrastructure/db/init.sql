@@ -78,6 +78,22 @@ CREATE TABLE IF NOT EXISTS notifications (
   sent_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Transactional outbox (ST5): notification events written in the same transaction as the claim change that
+-- raised them, delivered at least once by the notification-dispatcher. 'dead' is the dead-letter state:
+-- SELECT * FROM outbox_events WHERE status = 'dead';
+CREATE TABLE IF NOT EXISTS outbox_events (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_type   TEXT        NOT NULL,
+  aggregate_id UUID,
+  payload      JSONB       NOT NULL,
+  status       TEXT        NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'dead')),
+  attempts     INT         NOT NULL DEFAULT 0,
+  available_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  sent_at      TIMESTAMPTZ,
+  last_error   TEXT
+);
+
 -- ─── WORKFLOW POLICY (FR3) ─────────────────────────────────────────────────
 -- Who may move a claim between statuses, and what each role may do. With WORKFLOW_SOURCE=db (the default) the
 -- claims service reads these through a 30-second cache, so a change here takes effect without a redeploy.
@@ -128,6 +144,7 @@ CREATE INDEX IF NOT EXISTS idx_claims_customer_id        ON claims(customer_id);
 CREATE INDEX IF NOT EXISTS idx_claims_status             ON claims(status);
 CREATE INDEX IF NOT EXISTS idx_claim_status_history_cid  ON claim_status_history(claim_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient   ON notifications(recipient_id);
+CREATE INDEX IF NOT EXISTS idx_outbox_events_due         ON outbox_events(created_at) WHERE status = 'pending';
 
 -- ─── SEED USERS ────────────────────────────────────────────────────────────
 -- Password for all seed users: Test1234!
