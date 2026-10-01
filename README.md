@@ -322,6 +322,15 @@ under `/api` (for example `http://localhost:3000/api/claims`).
 | GET    | `/claims/{id}/documents/{doc_id}/download`        | Bearer | Download a document                               |
 | GET    | `/health`                                         | Public | Liveness check (reports DB + Redis status)        |
 
+Every claim the service returns carries `allowed_actions`, which lists what the caller may do to it right now:
+- `transitions`: workflow steps;
+- `overrides`: case-manager override targets;
+- `assign`: whether the caller may assign or reassign the claim;
+- `upload`: whether the caller may upload documents.
+
+The server works these out from the same rules it enforces, and the internal portal's action panel renders
+only what they list, so the portal has no copy of the state machine.
+
 Uploads are validated by extension, size (≤ 10 MB) and true content type (content sniffing): a file whose
 content is not an allowed type, or does not match its own extension, is rejected with `415`, oversize with
 `413`. A document is listed under its base file name; any directory part the client sent is dropped.
@@ -399,7 +408,7 @@ Two rules that are easy to break and only fail in the production build:
 # After changing code, rebuild first: docker compose build auth-service claims-service
 cd infrastructure
 docker compose run --rm --no-deps auth-service python -m pytest -q     # 19 tests
-docker compose run --rm --no-deps claims-service python -m pytest -q   # 46 tests
+docker compose run --rm --no-deps claims-service python -m pytest -q   # 50 tests
 ```
 
 Tests use an in-memory SQLite database, a fake Redis and a stubbed auth-service call, so no other

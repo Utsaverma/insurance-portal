@@ -115,6 +115,9 @@ expect 400 "a claim cannot be assigned to an unknown user" -X POST "$API/claims/
 expect 200 "case manager assigns the claim to a surveyor" -X POST "$API/claims/$CLAIM/assign" \
   -H "Authorization: Bearer $CM" -H 'Content-Type: application/json' -d "{\"assigned_to\":\"$SURVEYOR_ID\"}"
 [ "$(json "d['status']")" = "ASSIGNED" ] && pass "claim is ASSIGNED" || fail "claim not ASSIGNED after assignment"
+expect 200 "surveyor reads the claim" "$API/claims/$CLAIM" -H "Authorization: Bearer $SURVEYOR"
+[ "$(json "d['allowed_actions']['transitions']")" = "['UNDER_SURVEY']" ] && pass "the server offers the surveyor only the next step" \
+  || fail "surveyor offered $(json "d['allowed_actions']")"
 
 patch_status 200 "surveyor starts the survey" "$SURVEYOR" "$CLAIM" '{"status":"UNDER_SURVEY"}'
 patch_status 400 "survey cannot complete without an assessed amount" "$SURVEYOR" "$CLAIM" '{"status":"SURVEYED","note":"Bumper replacement"}'

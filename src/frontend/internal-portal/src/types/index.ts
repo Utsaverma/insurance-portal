@@ -32,6 +32,20 @@ export interface UserProfileResponse {
   created_at: string
 }
 
+/** What the signed-in user may do to a claim right now, computed by the server
+ *  from the workflow and the assignment. The UI renders from this instead of
+ *  re-implementing the state machine. */
+export interface AllowedActions {
+  /** Workflow steps: PATCH /claims/{id}/status with one of these. */
+  transitions: ClaimStatus[]
+  /** Case-manager overrides: the same PATCH, with a mandatory reason. */
+  overrides: ClaimStatus[]
+  /** POST /claims/{id}/assign */
+  assign: boolean
+  /** POST /claims/{id}/documents */
+  upload: boolean
+}
+
 export interface Claim {
   id: string
   claim_number: string
@@ -48,6 +62,7 @@ export interface Claim {
   status: ClaimStatus
   assigned_to: string | null
   assigned_staff_name?: string
+  allowed_actions: AllowedActions
   created_at: string
   updated_at: string
 }

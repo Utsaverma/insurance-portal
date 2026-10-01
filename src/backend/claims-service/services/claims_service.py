@@ -9,7 +9,7 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.db_models import Claim, ClaimStatus, ClaimStatusHistory
-from models.schemas import AssignRequest, ClaimCreate, StaffMember, StatusUpdateRequest, UserContext
+from models.schemas import AllowedActions, AssignRequest, ClaimCreate, StaffMember, StatusUpdateRequest, UserContext
 from repositories.claim_repository import ClaimRepository
 from services.errors import BusinessRuleViolation, Forbidden, InvalidTransition, NotFound
 from services.notification_service import send_notification
@@ -32,6 +32,10 @@ _APPROVAL_STANDS = {ClaimStatus.APPROVED, ClaimStatus.PAID}
 _CLOSED = {ClaimStatus.PAID, ClaimStatus.REJECTED}
 # A claim is assigned to the people who work it, and they act only on the claims assigned to them.
 ASSIGNABLE_ROLES = {"SURVEYOR", "ADJUSTOR"}
+# Who assigns claims; a regional manager only reassigns, after a case manager's first assignment.
+ASSIGNING_ROLES = {"CASE_MANAGER", "REGIONAL_MANAGER"}
+# Who adds documents: the customer who owns the claim, and its assigned surveyor or adjustor.
+UPLOAD_ROLES = {"CUSTOMER", *ASSIGNABLE_ROLES}
 
 
 def _actor(user: UserContext) -> str:
@@ -63,13 +67,49 @@ def is_pickup(claim: Claim, requested: ClaimStatus, user: UserContext) -> bool:
     )
 
 
-def ensure_assignee(user: UserContext, claim: Claim, requested: ClaimStatus | None = None) -> None:
+def ensure_assignee(user: UserContext, claim: Claim, requested: ClaimStatus) -> None:
     """Surveyors and adjustors act only on claims assigned to them; the one exception is the queue pickup."""
-    if user.role not in ASSIGNABLE_ROLES or claim.assigned_to == user.id:
-        return
-    if requested is not None and is_pickup(claim, requested, user):
+    if user.role not in ASSIGNABLE_ROLES or claim.assigned_to == user.id or is_pickup(claim, requested, user):
         return
     raise Forbidden("This claim is not assigned to you")
+
+
+def can_upload(user: UserContext, claim: Claim) -> bool:
+    if user.role == "CUSTOMER":
+        return claim.customer_id == user.id
+    return user.role in ASSIGNABLE_ROLES and claim.assigned_to == user.id
+
+
+def can_assign(user: UserContext, claim: Claim) -> bool:
+    if user.role not in ASSIGNING_ROLES or claim.status in _CLOSED:
+        return False
+    return claim.status != ClaimStatus.SUBMITTED or user.role == "CASE_MANAGER"
+
+
+def allowed_actions(claim: Claim, user: UserContext) -> AllowedActions:
+    """The actions update_status, assign_claim and the upload route would accept from this user now."""
+    steps = TRANSITIONS.get(claim.status, {}).get(user.role, set())
+    transitions = [
+        s for s in ClaimStatus
+        if s in steps
+        and user.role in ASSIGNABLE_ROLES  # a case manager's own step (SUBMITTED → ASSIGNED) is taken by assigning
+        and (claim.assigned_to == user.id or is_pickup(claim, s, user))
+        and not (s == ClaimStatus.PAID and claim.approved_amount is None)
+    ]
+    overrides = []
+    if user.role == "CASE_MANAGER" and claim.status != ClaimStatus.PAID:
+        overrides = [
+            s for s in ClaimStatus
+            if s != claim.status
+            and is_override(claim.status, s, user.role)
+            and not (s == ClaimStatus.PAID and claim.approved_amount is None)
+        ]
+    return AllowedActions(
+        transitions=transitions,
+        overrides=overrides,
+        assign=can_assign(user, claim),
+        upload=can_upload(user, claim),
+    )
 
 
 def _assignee_after(claim: Claim, req: StatusUpdateRequest, user: UserContext) -> uuid.UUID | None:

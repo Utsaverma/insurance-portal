@@ -21,9 +21,10 @@ from services.user_directory import SKIP_ROLES, Directory, get_staff_directory
 router = APIRouter(prefix="/claims", tags=["claims"])
 
 
-def _to_response(claim: Claim, directory: Directory) -> ClaimResponse:
+def _to_response(claim: Claim, user: UserContext, directory: Directory | None = None) -> ClaimResponse:
     resp = ClaimResponse.model_validate(claim)
-    assignee = directory.get(str(claim.assigned_to)) if claim.assigned_to is not None else None
+    resp.allowed_actions = claims_service.allowed_actions(claim, user)
+    assignee = directory.get(str(claim.assigned_to)) if directory and claim.assigned_to is not None else None
     if assignee is not None:
         resp.assigned_staff_name = assignee.name
     return resp
@@ -44,7 +45,7 @@ async def submit_claim(
     db: AsyncSession = Depends(get_db),
 ):
     claim = await claims_service.submit_claim(body, user, db)
-    return ClaimResponse.model_validate(claim)
+    return _to_response(claim, user)
 
 
 @router.get("", response_model=ClaimListResponse)
@@ -58,7 +59,7 @@ async def list_claims(
 ):
     items, total = await claims_service.list_claims(user, db, skip=skip, limit=limit)
     directory = await _staff_directory(request, user, token)
-    return ClaimListResponse(items=[_to_response(c, directory) for c in items], total=total)
+    return ClaimListResponse(items=[_to_response(c, user, directory) for c in items], total=total)
 
 
 @router.get("/{claim_id}", response_model=ClaimResponse)
@@ -71,7 +72,7 @@ async def get_claim(
 ):
     claim = await claims_service.get_accessible_claim(claim_id, user, db)
     directory = await _staff_directory(request, user, token)
-    return _to_response(claim, directory)
+    return _to_response(claim, user, directory)
 
 
 @router.patch("/{claim_id}/status", response_model=ClaimResponse)
@@ -82,7 +83,7 @@ async def update_status(
     db: AsyncSession = Depends(get_db),
 ):
     claim = await claims_service.update_status(claim_id, body, user, db)
-    return ClaimResponse.model_validate(claim)
+    return _to_response(claim, user)
 
 
 @router.post("/{claim_id}/assign", response_model=ClaimResponse)
@@ -90,7 +91,7 @@ async def assign_claim(
     claim_id: uuid.UUID,
     body: AssignRequest,
     request: Request,
-    user: UserContext = Depends(require_role("CASE_MANAGER", "REGIONAL_MANAGER")),
+    user: UserContext = Depends(require_role(*claims_service.ASSIGNING_ROLES)),
     token: str = Depends(get_bearer_token),
     db: AsyncSession = Depends(get_db),
 ):
@@ -103,7 +104,7 @@ async def assign_claim(
     claim = await claims_service.assign_claim(
         claim_id, body, user, db, assignee=directory.get(str(body.assigned_to))
     )
-    return _to_response(claim, directory)
+    return _to_response(claim, user, directory)
 
 
 @router.get("/{claim_id}/history", response_model=list[HistoryEntry])

@@ -114,6 +114,7 @@ export function ClaimDetail() {
             <StatusActionPanel
               claim={claim}
               role={currentUser.role}
+              userId={currentUser.id}
               onActionComplete={loadData}
             />
           </div>

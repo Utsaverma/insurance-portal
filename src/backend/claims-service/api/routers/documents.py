@@ -9,10 +9,9 @@ from dependencies.db import get_db
 from models.db_models import ClaimDocument
 from models.schemas import DocumentResponse, UserContext
 from services import document_service
+from services.claims_service import UPLOAD_ROLES
 
 router = APIRouter(prefix="/claims", tags=["documents"])
-
-UPLOAD_ROLES = ("CUSTOMER", "SURVEYOR", "ADJUSTOR")
 
 
 def _to_response(doc: ClaimDocument) -> DocumentResponse:

@@ -436,3 +436,79 @@ async def test_assigning_a_claim_in_the_adjudication_queue_is_not_a_reassignment
     assert resp.status_code == 200
     history = (await client.get(f"/claims/{sample_claim.id}/history")).json()
     assert history[-1]["note"] == "Assigned to Bob Adjuster"
+
+
+def _actions(resp) -> dict:
+    return resp.json()["allowed_actions"]
+
+
+@pytest.mark.asyncio
+async def test_allowed_actions_follow_the_workflow_and_the_assignment(
+    client, db_session, sample_claim, surveyor_user, adjustor_user, case_manager_user, customer_user
+):
+    url = f"/claims/{sample_claim.id}"
+
+    # SUBMITTED: the customer may add evidence; the case manager assigns or overrides.
+    _act_as(customer_user)
+    assert _actions(await client.get(url)) == {"transitions": [], "overrides": [], "assign": False, "upload": True}
+    _act_as(case_manager_user)
+    cm = _actions(await client.get(url))
+    assert cm["transitions"] == [] and cm["assign"] is True and cm["upload"] is False
+    # Every other status but ASSIGNED (taken by assigning) and PAID (there is no approved amount yet).
+    assert cm["overrides"] == ["UNDER_SURVEY", "SURVEYED", "UNDER_ADJUDICATION", "APPROVED", "REJECTED"]
+
+    # ASSIGNED to this surveyor: only they may start the survey or upload.
+    await _set_status(db_session, sample_claim, ClaimStatus.ASSIGNED, surveyor_user.id)
+    _act_as(surveyor_user)
+    assert _actions(await client.get(url)) == {
+        "transitions": ["UNDER_SURVEY"], "overrides": [], "assign": False, "upload": True,
+    }
+    _act_as(UserContext(id=uuid.uuid4(), email="other-surveyor@test.com", role="SURVEYOR"))
+    assert _actions(await client.get(url))["transitions"] == []
+
+    # SURVEYED and unassigned: any adjustor may pick it up, but has nothing to upload to yet.
+    await _set_status(db_session, sample_claim, ClaimStatus.SURVEYED)
+    _act_as(adjustor_user)
+    assert _actions(await client.get(url)) == {
+        "transitions": ["UNDER_ADJUDICATION"], "overrides": [], "assign": False, "upload": False,
+    }
+
+    # UNDER_ADJUDICATION with this adjustor: approve or reject.
+    await _set_status(db_session, sample_claim, ClaimStatus.UNDER_ADJUDICATION, adjustor_user.id)
+    assert _actions(await client.get(url))["transitions"] == ["APPROVED", "REJECTED"]
+
+    # APPROVED: payment is offered, and a case manager may now override to PAID too.
+    sample_claim.approved_amount = Decimal("9000")
+    await _set_status(db_session, sample_claim, ClaimStatus.APPROVED, adjustor_user.id)
+    assert _actions(await client.get(url))["transitions"] == ["PAID"]
+    _act_as(case_manager_user)
+    assert "PAID" in _actions(await client.get(url))["overrides"]
+
+    # PAID is final for everyone, and closed claims cannot be reassigned.
+    await _set_status(db_session, sample_claim, ClaimStatus.PAID, adjustor_user.id)
+    assert _actions(await client.get(url)) == {"transitions": [], "overrides": [], "assign": False, "upload": False}
+
+
+@pytest.mark.asyncio
+async def test_regional_manager_reassigns_only_after_the_first_assignment(client, db_session, sample_claim):
+    _act_as(UserContext(id=uuid.uuid4(), email="frank@test.com", role="REGIONAL_MANAGER"))
+    url = f"/claims/{sample_claim.id}"
+    assert _actions(await client.get(url))["assign"] is False
+    await _set_status(db_session, sample_claim, ClaimStatus.UNDER_SURVEY, uuid.UUID(SURVEYOR_ID))
+    assert _actions(await client.get(url))["assign"] is True
+    await _set_status(db_session, sample_claim, ClaimStatus.REJECTED, uuid.UUID(SURVEYOR_ID))
+    assert _actions(await client.get(url))["assign"] is False
+
+
+@pytest.mark.asyncio
+async def test_status_change_response_carries_the_next_actions(client, db_session, sample_claim, surveyor_user):
+    await _set_status(db_session, sample_claim, ClaimStatus.ASSIGNED, surveyor_user.id)
+    _act_as(surveyor_user)
+    resp = await client.patch(f"/claims/{sample_claim.id}/status", json={"status": "UNDER_SURVEY"})
+    assert _actions(resp)["transitions"] == ["SURVEYED"]
+
+
+@pytest.mark.asyncio
+async def test_listed_claims_carry_allowed_actions(client, sample_claim, customer_user):
+    items = (await client.get("/claims")).json()["items"]
+    assert items and all(item["allowed_actions"]["upload"] for item in items)

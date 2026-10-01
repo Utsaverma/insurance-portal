@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import type { Claim, UserProfileResponse, UserRole } from '../types'
+import type { Claim, ClaimStatus, UserProfileResponse, UserRole } from '../types'
 import { assignClaim, updateClaimStatus, type StatusUpdateBody } from '../api/claims'
 import { apiErrorMessage } from '../api/client'
 import { listStaff } from '../api/users'
@@ -10,18 +10,11 @@ import { Alert, Button, Card, CardBody, CardTitle, Input, Select, Textarea, type
 interface Props {
   claim: Claim
   role: UserRole
+  userId: string
   onActionComplete: () => void
 }
 
 type ActionState = 'idle' | 'loading' | 'error'
-
-const ALL_STATUSES = [
-  'SUBMITTED', 'ASSIGNED', 'UNDER_SURVEY', 'SURVEYED',
-  'UNDER_ADJUDICATION', 'APPROVED', 'REJECTED', 'PAID',
-]
-
-/** Closed claims keep their last assignment (the server refuses a reassignment). */
-const isClosed = (c: Claim) => c.status === 'PAID' || c.status === 'REJECTED'
 
 /** Who a claim can be assigned to (the people who work it), and how the role reads. */
 const ASSIGNABLE_ROLES: Partial<Record<UserRole, string>> = {
@@ -54,24 +47,30 @@ function amountError(value: string, max?: string | number): string | undefined {
 
 const amountOk = (value: string, max?: string | number) => value !== '' && !amountError(value, max)
 
-/** What a surveyor or adjustor is told when the claim is not at one of their steps,
- *  instead of a permanently disabled button with no explanation. */
-function waitingMessage(role: UserRole, status: Claim['status']): string | undefined {
+/** Why the server offers this user nothing on the claim, instead of an empty
+ *  panel. Copy only: what is offered comes from claim.allowed_actions. */
+function waitingMessage(role: UserRole, claim: Claim, userId: string): string {
+  const { status } = claim
   if (status === 'PAID') return 'Paid claims are final: their status can no longer be changed.'
   if (status === 'REJECTED') return 'This claim was rejected. A case manager can reopen it with an override.'
-  if (role === 'SURVEYOR') {
-    if (status === 'SUBMITTED') return 'Waiting for a case manager to assign this claim.'
-    if (status !== 'ASSIGNED' && status !== 'UNDER_SURVEY') return 'The survey is complete. The claim is now with the adjustor.'
+  if (role === 'REGIONAL_MANAGER') return 'A case manager makes the first assignment. You can reassign the claim after that.'
+  if (role === 'SURVEYOR' && !['SUBMITTED', 'ASSIGNED', 'UNDER_SURVEY'].includes(status)) {
+    return 'The survey is complete. The claim is now with the adjustor.'
   }
-  if (role === 'ADJUSTOR') {
-    if (status === 'SUBMITTED' || status === 'ASSIGNED' || status === 'UNDER_SURVEY') {
-      return 'Waiting for the survey to be completed.'
-    }
+  if (role === 'ADJUSTOR' && ['SUBMITTED', 'ASSIGNED', 'UNDER_SURVEY'].includes(status)) {
+    return 'Waiting for the survey to be completed.'
   }
-  return undefined
+  if (!claim.assigned_to) return 'Waiting for a case manager to assign this claim.'
+  if (claim.assigned_to !== userId) {
+    return `This claim is assigned to ${claim.assigned_staff_name ?? 'another staff member'}. Only the assignee can work on it.`
+  }
+  return 'There is nothing for you to do on this claim right now.'
 }
 
-export function StatusActionPanel({ claim, role, onActionComplete }: Props) {
+export function StatusActionPanel({ claim, role, userId, onActionComplete }: Props) {
+  const actions = claim.allowed_actions
+  const can = (status: ClaimStatus) => actions.transitions.includes(status)
+
   const [note, setNote] = useState('')
   const [actionState, setActionState] = useState<ActionState>('idle')
   const [errorMsg, setErrorMsg] = useState('')
@@ -88,13 +87,13 @@ export function StatusActionPanel({ claim, role, onActionComplete }: Props) {
   }, [claim])
 
   useEffect(() => {
-    if (role !== 'CASE_MANAGER' && role !== 'REGIONAL_MANAGER') return
+    if (!actions.assign) return
     // GET /users/all has no server-side role filter: it returns every user,
     // customers and auditors included.
     listStaff()
       .then((users) => setStaff(users.filter((u) => ASSIGNABLE_ROLES[u.role])))
       .catch((e) => setErrorMsg(apiErrorMessage(e, 'Could not load staff.')))
-  }, [role])
+  }, [actions.assign])
 
   if (role === 'AUDITOR') return null
 
@@ -137,15 +136,6 @@ export function StatusActionPanel({ claim, role, onActionComplete }: Props) {
     }
   }
 
-  // Any status but the current one. SUBMITTED → ASSIGNED is not an override:
-  // it is the case manager's own step, taken with Assign so the claim gets an owner.
-  // PAID settles the approved amount, so the server allows it only once there is one.
-  const overrideTargets = ALL_STATUSES.filter(
-    (s) =>
-      s !== claim.status &&
-      !(claim.status === 'SUBMITTED' && s === 'ASSIGNED') &&
-      !(s === 'PAID' && claim.approved_amount == null)
-  )
   // An override is held to the same amount rules as the normal workflow.
   const overrideReady =
     overrideTo !== '' &&
@@ -164,7 +154,7 @@ export function StatusActionPanel({ claim, role, onActionComplete }: Props) {
     if (window.confirm(question)) doAction('PAID')
   }
 
-  const waiting = waitingMessage(role, claim.status)
+  const nothingToDo = !actions.assign && actions.overrides.length === 0 && actions.transitions.length === 0
 
   // The panel-wide loading state is unchanged; it just renders as `loading`
   // now, so labels stay readable instead of collapsing to an ellipsis.
@@ -204,185 +194,146 @@ export function StatusActionPanel({ claim, role, onActionComplete }: Props) {
     />
   )
 
+  const assignForm = (
+    <div className="space-y-3">
+      <Select
+        label="Assignee"
+        value={assignee}
+        onChange={(e) => setAssignee(e.target.value)}
+      >
+        <option value="">— choose staff member —</option>
+        {staff.map((s) => (
+          <option key={s.id} value={s.id}>{staffLabel(s)}</option>
+        ))}
+      </Select>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="primary"
+          onClick={doAssign}
+          disabled={!assignee}
+          loading={actionState === 'loading'}
+        >
+          {claim.assigned_to ? 'Reassign Claim' : 'Assign Claim'}
+        </Button>
+      </div>
+    </div>
+  )
+
+  // Every control below is offered only when claim.allowed_actions says the
+  // server would accept it, so the panel no longer mirrors the state machine.
   return (
     <Card>
       <CardBody>
         <CardTitle size="md" className="mb-4">Actions</CardTitle>
 
-        {role === 'CASE_MANAGER' && (
-          <div className="space-y-4">
-            {!isClosed(claim) && (
-              <div className="space-y-3">
-                <Select
-                  label="Assignee"
-                  value={assignee}
-                  onChange={(e) => setAssignee(e.target.value)}
-                >
-                  <option value="">— choose staff member —</option>
-                  {staff.map((s) => (
-                    <option key={s.id} value={s.id}>{staffLabel(s)}</option>
-                  ))}
-                </Select>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="primary"
-                    onClick={doAssign}
-                    disabled={!assignee}
-                    loading={actionState === 'loading'}
-                  >
-                    {claim.status === 'SUBMITTED' ? 'Assign Claim' : 'Reassign Claim'}
-                  </Button>
-                </div>
-              </div>
-            )}
-            {/* An explicit form: the old select changed the status straight from
-                onChange, so one slip in the picker rewrote a claim's status. */}
-            {claim.status === 'PAID' ? (
-              <p className="text-sm text-fg-muted">
-                Paid claims are final: their status can no longer be changed.
-              </p>
-            ) : (
-              <div className={cn('space-y-3', !isClosed(claim) && 'border-t border-line pt-4')}>
-                <Select
-                  label="Override Status"
-                  value={overrideTo}
-                  onChange={(e) => setOverrideTo(e.target.value)}
-                  disabled={actionState === 'loading'}
-                >
-                  <option value="">— choose status —</option>
-                  {overrideTargets.map((s) => (
-                    <option key={s} value={s}>{statusLabel(s)}</option>
-                  ))}
-                </Select>
-                {overrideTo === 'SURVEYED' &&
-                  amountInput('Assessed Amount (USD)', assessedAmount, setAssessedAmount)}
-                {overrideTo === 'APPROVED' &&
-                  amountInput('Approved Amount (USD)', approvedAmount, setApprovedAmount, claim.claimed_amount)}
-                <Textarea
-                  label="Reason"
-                  hint="(required)"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  rows={3}
-                />
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="danger"
-                    onClick={doOverride}
-                    disabled={!overrideReady}
-                    loading={actionState === 'loading'}
-                  >
-                    Apply Override
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+        <div className="space-y-4">
+          {nothingToDo && <p className="text-sm text-fg-muted">{waitingMessage(role, claim, userId)}</p>}
 
-        {role === 'REGIONAL_MANAGER' && isClosed(claim) && (
-          <p className="text-sm text-fg-muted">Closed claims keep their last assignment.</p>
-        )}
+          {actions.assign && assignForm}
 
-        {role === 'REGIONAL_MANAGER' && claim.status === 'SUBMITTED' && (
-          <p className="text-sm text-fg-muted">
-            A case manager makes the first assignment. You can reassign the claim after that.
-          </p>
-        )}
-
-        {role === 'REGIONAL_MANAGER' && !isClosed(claim) && claim.status !== 'SUBMITTED' && (
-          <div className="space-y-3">
-            <Select
-              label="Assignee"
-              value={assignee}
-              onChange={(e) => setAssignee(e.target.value)}
-            >
-              <option value="">— choose staff member —</option>
-              {staff.map((s) => (
-                <option key={s.id} value={s.id}>{staffLabel(s)}</option>
-              ))}
-            </Select>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="primary"
-                onClick={doAssign}
-                disabled={!assignee}
-                loading={actionState === 'loading'}
+          {/* An explicit form: the old select changed the status straight from
+              onChange, so one slip in the picker rewrote a claim's status. */}
+          {actions.overrides.length > 0 && (
+            <div className={cn('space-y-3', actions.assign && 'border-t border-line pt-4')}>
+              <Select
+                label="Override Status"
+                value={overrideTo}
+                onChange={(e) => setOverrideTo(e.target.value)}
+                disabled={actionState === 'loading'}
               >
-                Reassign Claim
-              </Button>
+                <option value="">— choose status —</option>
+                {actions.overrides.map((s) => (
+                  <option key={s} value={s}>{statusLabel(s)}</option>
+                ))}
+              </Select>
+              {overrideTo === 'SURVEYED' &&
+                amountInput('Assessed Amount (USD)', assessedAmount, setAssessedAmount)}
+              {overrideTo === 'APPROVED' &&
+                amountInput('Approved Amount (USD)', approvedAmount, setApprovedAmount, claim.claimed_amount)}
+              <Textarea
+                label="Reason"
+                hint="(required)"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={3}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="danger"
+                  onClick={doOverride}
+                  disabled={!overrideReady}
+                  loading={actionState === 'loading'}
+                >
+                  Apply Override
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {role === 'SURVEYOR' && (
-          <div className="space-y-4">
-            {waiting && <p className="text-sm text-fg-muted">{waiting}</p>}
-            {claim.status === 'ASSIGNED' && (
-              <div className="flex flex-wrap gap-2">
-                {btn('Start Survey', 'UNDER_SURVEY')}
-              </div>
-            )}
-            {claim.status === 'UNDER_SURVEY' && (
-              <div className="space-y-3">
-                {amountInput('Assessed Amount (USD)', assessedAmount, setAssessedAmount)}
-                <Textarea
-                  label="Assessment Notes"
-                  hint="(required)"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  rows={3}
-                />
-                <div className="flex flex-wrap gap-2">
-                  {btn('Submit Assessment', 'SURVEYED', !note.trim() || !amountOk(assessedAmount))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+          {can('UNDER_SURVEY') && (
+            <div className="flex flex-wrap gap-2">
+              {btn('Start Survey', 'UNDER_SURVEY')}
+            </div>
+          )}
 
-        {role === 'ADJUSTOR' && (
-          <div className="space-y-4">
-            {waiting && <p className="text-sm text-fg-muted">{waiting}</p>}
-            {claim.status === 'SURVEYED' && (
+          {can('SURVEYED') && (
+            <div className="space-y-3">
+              {amountInput('Assessed Amount (USD)', assessedAmount, setAssessedAmount)}
+              <Textarea
+                label="Assessment Notes"
+                hint="(required)"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={3}
+              />
               <div className="flex flex-wrap gap-2">
-                {btn('Begin Adjudication', 'UNDER_ADJUDICATION')}
+                {btn('Submit Assessment', 'SURVEYED', !note.trim() || !amountOk(assessedAmount))}
               </div>
-            )}
-            {claim.status === 'UNDER_ADJUDICATION' && (
-              <div className="space-y-3">
-                {amountInput(
+            </div>
+          )}
+
+          {can('UNDER_ADJUDICATION') && (
+            <div className="flex flex-wrap gap-2">
+              {btn('Begin Adjudication', 'UNDER_ADJUDICATION')}
+            </div>
+          )}
+
+          {(can('APPROVED') || can('REJECTED')) && (
+            <div className="space-y-3">
+              {can('APPROVED') &&
+                amountInput(
                   'Approved Amount (USD)',
                   approvedAmount,
                   setApprovedAmount,
                   claim.claimed_amount,
                   '(required to approve)'
                 )}
-                <Textarea
-                  label="Notes"
-                  hint="(required to reject)"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  rows={3}
-                />
-                <div className="flex flex-wrap gap-2">
-                  {btn('Approve', 'APPROVED', !amountOk(approvedAmount, claim.claimed_amount), 'success')}
-                  {btn('Reject', 'REJECTED', !note.trim(), 'danger')}
-                </div>
-              </div>
-            )}
-            {claim.status === 'APPROVED' && (
+              <Textarea
+                label="Notes"
+                hint={can('REJECTED') ? '(required to reject)' : undefined}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={3}
+              />
               <div className="flex flex-wrap gap-2">
-                {/* Was bg-yellow-500 + white text: ~1.9:1, already failing in
-                    light mode. The warning token is amber-700, which clears
-                    4.5:1 in both themes. Do not reintroduce the yellow. */}
-                <Button variant="warning" onClick={doMarkPaid} loading={actionState === 'loading'}>
-                  Mark Paid
-                </Button>
+                {can('APPROVED') &&
+                  btn('Approve', 'APPROVED', !amountOk(approvedAmount, claim.claimed_amount), 'success')}
+                {can('REJECTED') && btn('Reject', 'REJECTED', !note.trim(), 'danger')}
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+
+          {can('PAID') && (
+            <div className="flex flex-wrap gap-2">
+              {/* Was bg-yellow-500 + white text: ~1.9:1, already failing in
+                  light mode. The warning token is amber-700, which clears
+                  4.5:1 in both themes. Do not reintroduce the yellow. */}
+              <Button variant="warning" onClick={doMarkPaid} loading={actionState === 'loading'}>
+                Mark Paid
+              </Button>
+            </div>
+          )}
+        </div>
 
         {errorMsg && <Alert tone="danger" className="mt-4">{errorMsg}</Alert>}
       </CardBody>

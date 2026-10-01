@@ -29,6 +29,19 @@ class ClaimCreate(BaseModel):
         return v
 
 
+class AllowedActions(BaseModel):
+    """What the caller may do to this claim right now, worked out by the server from the workflow and the
+    access rules, so the portals never re-implement the state machine."""
+    # Workflow steps: PATCH /claims/{id}/status with one of these statuses.
+    transitions: list[ClaimStatus] = []
+    # Case-manager overrides: the same PATCH, with a mandatory reason.
+    overrides: list[ClaimStatus] = []
+    # POST /claims/{id}/assign
+    assign: bool = False
+    # POST /claims/{id}/documents
+    upload: bool = False
+
+
 class ClaimResponse(BaseModel):
     id: uuid.UUID
     claim_number: str
@@ -42,6 +55,7 @@ class ClaimResponse(BaseModel):
     status: ClaimStatus
     assigned_to: uuid.UUID | None
     assigned_staff_name: str | None = None
+    allowed_actions: AllowedActions = AllowedActions()
     created_at: datetime
     updated_at: datetime
 
