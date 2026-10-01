@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db
-from dependencies.policy import require_permission
+from dependencies.workflow import require_permission
 from models.schemas import ReportSummary, UserContext
 from services import reporting_service
 from services.workflow_policy import VIEW_REPORTS

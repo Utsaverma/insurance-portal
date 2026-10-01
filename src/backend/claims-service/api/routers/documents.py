@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.auth import get_current_user
 from dependencies.db import get_db
-from dependencies.policy import get_policy, require_permission
+from dependencies.workflow import get_workflow, require_permission
 from models.db_models import ClaimDocument
 from models.schemas import DocumentResponse, UserContext
 from services import document_service
@@ -34,9 +34,9 @@ async def upload_document(
     file: UploadFile,
     user: UserContext = Depends(require_permission(UPLOAD)),
     db: AsyncSession = Depends(get_db),
-    policy: WorkflowPolicy = Depends(get_policy),
+    workflow: WorkflowPolicy = Depends(get_workflow),
 ):
-    doc = await document_service.upload_document(claim_id, file, user, db, policy)
+    doc = await document_service.upload_document(claim_id, file, user, db, workflow)
     return _to_response(doc)
 
 

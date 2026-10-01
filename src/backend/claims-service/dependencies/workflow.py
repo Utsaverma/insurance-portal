@@ -7,7 +7,7 @@ from models.schemas import UserContext
 from services.workflow_policy import WorkflowPolicy, load_policy
 
 
-async def get_policy(request: Request, db: AsyncSession = Depends(get_db)) -> WorkflowPolicy:
+async def get_workflow(request: Request, db: AsyncSession = Depends(get_db)) -> WorkflowPolicy:
     return await load_policy(db, request.app.state.redis)
 
 
@@ -15,9 +15,9 @@ def require_permission(*permissions: str):
     """The caller's role must hold at least one of `permissions` in the current workflow policy."""
     async def dependency(
         user: UserContext = Depends(get_current_user),
-        policy: WorkflowPolicy = Depends(get_policy),
+        workflow: WorkflowPolicy = Depends(get_workflow),
     ) -> UserContext:
-        if not any(policy.allows(user.role, p) for p in permissions):
+        if not any(workflow.allows(user.role, p) for p in permissions):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         return user
     return dependency

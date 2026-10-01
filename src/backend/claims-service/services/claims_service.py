@@ -48,86 +48,86 @@ def _status_notice(claim: Claim, reason: str) -> tuple[str, str]:
     return f"Your claim {claim.claim_number} is now {label}", message
 
 
-def validate_transition(current: ClaimStatus, requested: ClaimStatus, role: str, policy: WorkflowPolicy) -> None:
-    if policy.allows(role, OVERRIDE):
+def validate_transition(current: ClaimStatus, requested: ClaimStatus, role: str, workflow: WorkflowPolicy) -> None:
+    if workflow.allows(role, OVERRIDE):
         return
-    if requested not in policy.steps(current, role):
+    if requested not in workflow.steps(current, role):
         raise InvalidTransition(f"Invalid state transition: {current} → {requested} not allowed for role {role}")
 
 
-def is_override(current: ClaimStatus, requested: ClaimStatus, role: str, policy: WorkflowPolicy) -> bool:
+def is_override(current: ClaimStatus, requested: ClaimStatus, role: str, workflow: WorkflowPolicy) -> bool:
     """A role holding the override permission moving a claim anywhere other than along its own steps."""
-    return policy.allows(role, OVERRIDE) and requested not in policy.steps(current, role)
+    return workflow.allows(role, OVERRIDE) and requested not in workflow.steps(current, role)
 
 
-def is_pickup(claim: Claim, requested: ClaimStatus, user: UserContext, policy: WorkflowPolicy) -> bool:
+def is_pickup(claim: Claim, requested: ClaimStatus, user: UserContext, workflow: WorkflowPolicy) -> bool:
     """Taking a surveyed claim from the adjudication queue: completing the survey leaves the claim
     unassigned, and whoever takes its next step becomes its assignee."""
     return (
-        policy.allows(user.role, WORK)
+        workflow.allows(user.role, WORK)
         and claim.status == ClaimStatus.SURVEYED
         and claim.assigned_to is None
-        and requested in policy.steps(claim.status, user.role)
+        and requested in workflow.steps(claim.status, user.role)
     )
 
 
-def ensure_assignee(user: UserContext, claim: Claim, requested: ClaimStatus, policy: WorkflowPolicy) -> None:
+def ensure_assignee(user: UserContext, claim: Claim, requested: ClaimStatus, workflow: WorkflowPolicy) -> None:
     """Workers (surveyors and adjustors) act only on claims assigned to them; the one exception is the pickup."""
-    if not policy.allows(user.role, WORK) or claim.assigned_to == user.id or is_pickup(claim, requested, user, policy):
+    if not workflow.allows(user.role, WORK) or claim.assigned_to == user.id or is_pickup(claim, requested, user, workflow):
         return
     raise Forbidden("This claim is not assigned to you")
 
 
-def can_upload(user: UserContext, claim: Claim, policy: WorkflowPolicy) -> bool:
+def can_upload(user: UserContext, claim: Claim, workflow: WorkflowPolicy) -> bool:
     # A paid claim is final, its documents included. A rejected one still takes evidence for a reopening.
-    if claim.status == ClaimStatus.PAID or not policy.allows(user.role, UPLOAD):
+    if claim.status == ClaimStatus.PAID or not workflow.allows(user.role, UPLOAD):
         return False
     if user.role == "CUSTOMER":
         return claim.customer_id == user.id
-    return not policy.allows(user.role, WORK) or claim.assigned_to == user.id
+    return not workflow.allows(user.role, WORK) or claim.assigned_to == user.id
 
 
-def can_assign(user: UserContext, claim: Claim, policy: WorkflowPolicy) -> bool:
+def can_assign(user: UserContext, claim: Claim, workflow: WorkflowPolicy) -> bool:
     if claim.status in _CLOSED:
         return False
-    return policy.allows(user.role, ASSIGN if claim.status == ClaimStatus.SUBMITTED else REASSIGN)
+    return workflow.allows(user.role, ASSIGN if claim.status == ClaimStatus.SUBMITTED else REASSIGN)
 
 
-def allowed_actions(claim: Claim, user: UserContext, policy: WorkflowPolicy) -> AllowedActions:
+def allowed_actions(claim: Claim, user: UserContext, workflow: WorkflowPolicy) -> AllowedActions:
     """The actions update_status, assign_claim and the upload route would accept from this user now."""
-    steps = policy.steps(claim.status, user.role)
+    steps = workflow.steps(claim.status, user.role)
     transitions = [
         s for s in ClaimStatus
         if s in steps
         # SUBMITTED → ASSIGNED is taken by assigning the claim, which gives it an owner.
         and not (claim.status == ClaimStatus.SUBMITTED and s == ClaimStatus.ASSIGNED)
-        and (not policy.allows(user.role, WORK) or claim.assigned_to == user.id or is_pickup(claim, s, user, policy))
+        and (not workflow.allows(user.role, WORK) or claim.assigned_to == user.id or is_pickup(claim, s, user, workflow))
         and not (s == ClaimStatus.PAID and claim.approved_amount is None)
     ]
     overrides = []
-    if policy.allows(user.role, OVERRIDE) and claim.status != ClaimStatus.PAID:
+    if workflow.allows(user.role, OVERRIDE) and claim.status != ClaimStatus.PAID:
         overrides = [
             s for s in ClaimStatus
             if s != claim.status
-            and is_override(claim.status, s, user.role, policy)
+            and is_override(claim.status, s, user.role, workflow)
             and not (claim.status == ClaimStatus.SUBMITTED and s == ClaimStatus.ASSIGNED)
             and not (s == ClaimStatus.PAID and claim.approved_amount is None)
         ]
     return AllowedActions(
         transitions=transitions,
         overrides=overrides,
-        assign=can_assign(user, claim, policy),
-        upload=can_upload(user, claim, policy),
+        assign=can_assign(user, claim, workflow),
+        upload=can_upload(user, claim, workflow),
     )
 
 
 def _assignee_after(
-    claim: Claim, req: StatusUpdateRequest, user: UserContext, policy: WorkflowPolicy
+    claim: Claim, req: StatusUpdateRequest, user: UserContext, workflow: WorkflowPolicy
 ) -> uuid.UUID | None:
     # The survey is the surveyor's last step: the claim waits, unassigned, for an adjustor to pick it up.
     if req.status == ClaimStatus.SURVEYED:
         return None
-    if is_pickup(claim, req.status, user, policy):
+    if is_pickup(claim, req.status, user, workflow):
         return user.id
     return claim.assigned_to
 
@@ -208,7 +208,7 @@ async def update_status(
     req: StatusUpdateRequest,
     user: UserContext,
     db: AsyncSession,
-    policy: WorkflowPolicy,
+    workflow: WorkflowPolicy,
 ) -> Claim:
     repo = ClaimRepository(db)
     claim = await repo.get_by_id(claim_id)
@@ -219,10 +219,10 @@ async def update_status(
     if req.status == claim.status:
         # Not a transition at all; without this a case-manager "override" could rewrite an approved amount.
         raise InvalidTransition(f"Invalid state transition: the claim is already {claim.status}")
-    validate_transition(claim.status, req.status, user.role, policy)
-    ensure_assignee(user, claim, req.status, policy)
+    validate_transition(claim.status, req.status, user.role, workflow)
+    ensure_assignee(user, claim, req.status, workflow)
 
-    override = is_override(claim.status, req.status, user.role, policy)
+    override = is_override(claim.status, req.status, user.role, workflow)
     reason = (req.note or "").strip()
     if override and not reason:
         raise BusinessRuleViolation("A reason is required when a case manager overrides the workflow")
@@ -241,7 +241,7 @@ async def update_status(
         assessed,
         approved,
         changed_by_name=_actor(user),
-        assigned_to=_assignee_after(claim, req, user, policy),
+        assigned_to=_assignee_after(claim, req, user, workflow),
     )
     subject, message = _status_notice(updated, reason)
     await notify(db, claim=updated, recipient_id=updated.customer_id, subject=subject, message=message)
@@ -253,7 +253,7 @@ async def assign_claim(
     req: AssignRequest,
     user: UserContext,
     db: AsyncSession,
-    policy: WorkflowPolicy,
+    workflow: WorkflowPolicy,
     assignee: StaffMember | None = None,
 ) -> Claim:
     """Assign the claim to `assignee`, the staff-directory entry for `req.assigned_to` (None if unknown)."""
@@ -265,14 +265,14 @@ async def assign_claim(
         raise InvalidTransition("Closed claims (paid or rejected) cannot be reassigned")
     if assignee is None:
         raise BusinessRuleViolation("The assignee is not a known staff member")
-    if not policy.allows(assignee.role, WORK):
+    if not workflow.allows(assignee.role, WORK):
         raise BusinessRuleViolation("A claim can only be assigned to a surveyor or an adjustor")
     new_status = None
     if claim.status == ClaimStatus.SUBMITTED:
-        if not policy.allows(user.role, ASSIGN):
+        if not workflow.allows(user.role, ASSIGN):
             raise Forbidden("Only case managers can assign a submitted claim")
         new_status = ClaimStatus.ASSIGNED
-    elif not policy.allows(user.role, REASSIGN):
+    elif not workflow.allows(user.role, REASSIGN):
         raise Forbidden("Your role cannot reassign claims")
     verb = "Assigned" if new_status is not None or claim.assigned_to is None else "Reassigned"
     note = f"{verb} to {assignee.name}"
