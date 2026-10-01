@@ -38,6 +38,7 @@ SHARED_FILES=(
   src/lib/theme.ts
   src/lib/format.ts
   src/components/DocumentList.tsx
+  src/components/StatusTimeline.tsx
 )
 
 # Expected to differ, with the reason:

@@ -2,13 +2,17 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import { FileQuestion } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import { getClaim, listDocuments } from '../api/claims'
+import { getClaim, getClaimHistory, listDocuments } from '../api/claims'
+import { apiErrorMessage, apiErrorStatus } from '../api/client'
 import { ClaimStatusBadge } from '../components/ClaimStatusBadge'
 import { StatusActionPanel } from '../components/StatusActionPanel'
+import { StatusTimeline } from '../components/StatusTimeline'
 import { ClaimDocumentViewer } from '../components/ClaimDocumentViewer'
 import { CONTENT_WIDTH } from '../components/layout/shell'
-import { formatINR, formatDate } from '../lib/format'
+import { cn } from '../lib/cn'
+import { formatCurrency, formatDate } from '../lib/format'
 import {
+  Alert,
   Avatar,
   Card,
   CardBody,
@@ -20,21 +24,33 @@ import {
   SectionHeading,
   StatCard,
 } from '../components/ui'
-import type { Claim, ClaimDocument } from '../types'
+import type { Claim, ClaimDocument, ClaimHistoryEntry } from '../types'
 
 export function ClaimDetail() {
   const { id } = useParams<{ id: string }>()
   const { currentUser } = useAuth()
   const [claim, setClaim] = useState<Claim | null>(null)
   const [docs, setDocs] = useState<ClaimDocument[]>([])
+  const [history, setHistory] = useState<ClaimHistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
+  // Also the panel's onActionComplete, so the audit trail refreshes after every action.
   const loadData = useCallback(async () => {
     if (!id) return
-    const [c, d] = await Promise.all([getClaim(id), listDocuments(id)])
-    setClaim(c)
-    setDocs(d)
-    setLoading(false)
+    try {
+      const [c, d, h] = await Promise.all([getClaim(id), listDocuments(id), getClaimHistory(id)])
+      setClaim(c)
+      setDocs(d)
+      setHistory(h)
+      setError('')
+    } catch (e) {
+      // An unknown or malformed claim id is the "not found" state below, not an error banner.
+      const status = apiErrorStatus(e)
+      setError(status === 404 || status === 422 ? '' : apiErrorMessage(e, 'Could not load this claim. Please try again.'))
+    } finally {
+      setLoading(false)
+    }
   }, [id])
 
   useEffect(() => { loadData() }, [loadData])
@@ -51,14 +67,21 @@ export function ClaimDetail() {
   if (!claim) {
     return (
       <PageContainer width={CONTENT_WIDTH}>
-        <EmptyState
-          icon={<FileQuestion aria-hidden className="h-8 w-8" />}
-          title="Claim not found."
-          description="It may have been removed, or you may not have access to it."
-        />
+        {error ? (
+          <Alert tone="danger">{error}</Alert>
+        ) : (
+          <EmptyState
+            icon={<FileQuestion aria-hidden className="h-8 w-8" />}
+            title="Claim not found."
+            description="It may have been removed, or you may not have access to it."
+          />
+        )}
       </PageContainer>
     )
   }
+
+  // Read-only for auditors: StatusActionPanel renders nothing for them.
+  const hasActions = currentUser != null && currentUser.role !== 'AUDITOR'
 
   return (
     <PageContainer width={CONTENT_WIDTH}>
@@ -68,6 +91,9 @@ export function ClaimDetail() {
         backLabel="Back to Queue"
         meta={<ClaimStatusBadge status={claim.status} />}
       />
+
+      {/* A failed reload after an action: the claim shown may be stale. */}
+      {error && <Alert tone="danger" className="mb-4">{error}</Alert>}
 
       {claim.assigned_to && currentUser?.role !== 'AUDITOR' && (
         <div className="mb-4 flex items-center gap-2 text-sm text-fg-muted">
@@ -83,29 +109,43 @@ export function ClaimDetail() {
             action was previously three screens below the stat tiles, the
             description card and the document list.
             top-20 (5rem) must track the header: h-16 (4rem) + 1rem of air. */}
-        <div className="order-1 lg:order-2 lg:sticky lg:top-20 lg:self-start">
-          {currentUser && (
+        {hasActions && currentUser && (
+          <div className="order-1 lg:order-2 lg:sticky lg:top-20 lg:self-start">
             <StatusActionPanel
               claim={claim}
               role={currentUser.role}
               onActionComplete={loadData}
             />
-          )}
-        </div>
+          </div>
+        )}
 
-        <div className="order-2 space-y-8 lg:order-1 lg:col-span-2">
-          <div className="grid grid-cols-2 gap-3">
+        {/* Auditors have no action rail, so the claim takes the full width. */}
+        <div className={cn('order-2 space-y-8 lg:order-1', hasActions ? 'lg:col-span-2' : 'lg:col-span-3')}>
+          {/* Three across from sm up, so the three amounts share one row. */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <StatCard label="Policy" value={claim.policy_number} size="sm" />
             <StatCard label="Incident Date" value={formatDate(claim.incident_date)} size="sm" numeric />
             <StatCard
-              label="Claimed Amount"
-              value={formatINR(claim.claimed_amount)}
+              label="Submitted"
+              value={formatDate(claim.created_at)}
               size="sm"
               numeric
             />
             <StatCard
-              label="Submitted"
-              value={formatDate(claim.created_at)}
+              label="Claimed Amount"
+              value={formatCurrency(claim.claimed_amount)}
+              size="sm"
+              numeric
+            />
+            <StatCard
+              label="Assessed Amount"
+              value={formatCurrency(claim.assessed_amount)}
+              size="sm"
+              numeric
+            />
+            <StatCard
+              label="Approved Amount"
+              value={formatCurrency(claim.approved_amount)}
               size="sm"
               numeric
             />
@@ -121,6 +161,11 @@ export function ClaimDetail() {
           <div>
             <SectionHeading>Documents</SectionHeading>
             <ClaimDocumentViewer claimId={claim.id} documents={docs} />
+          </div>
+
+          <div>
+            <SectionHeading>Audit Trail</SectionHeading>
+            <StatusTimeline history={history} />
           </div>
         </div>
       </div>

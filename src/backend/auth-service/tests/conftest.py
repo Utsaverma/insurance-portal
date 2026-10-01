@@ -1,3 +1,9 @@
+import os
+
+# Self-contained test settings: the suite needs no .env file or compose environment.
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-key-at-least-32-characters")
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport

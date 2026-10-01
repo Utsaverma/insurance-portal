@@ -1,133 +1,157 @@
 #!/usr/bin/env bash
-# Smoke test — run after `docker compose up --build --wait`
+# Pre-demo gate. Exercises the demo journey through the portals' nginx (/api), exactly as the browser does,
+# and stops with a non-zero exit code at the first unexpected result.
+# Run from infrastructure/ after `docker compose up --build --wait`.
+# It makes 6 logins, and login is rate-limited to 10 per minute per client, so don't run it in the minute
+# before a live demo. It registers its own customer, so the seeded demo customer's claims stay untouched; staff queues will
+# show the smoke claims, so reset the data before a demo (docker compose down -v && docker compose up -d --wait).
 set -euo pipefail
 
-BASE_AUTH=http://localhost:8001
-BASE_CLAIMS=http://localhost:8002
+# Host ports follow the same precedence as docker compose: shell environment, then .env, then defaults.
+if [ -f .env ]; then
+  while IFS='=' read -r key value; do
+    [ -z "${!key:-}" ] && export "$key=$value"
+  done < <(grep -E '^(CUSTOMER_PORTAL_PORT|INTERNAL_PORTAL_PORT|AUTH_PORT|CLAIMS_PORT)=' .env || true)
+fi
+CUSTOMER_PORTAL="http://localhost:${CUSTOMER_PORTAL_PORT:-3000}"
+INTERNAL_PORTAL="http://localhost:${INTERNAL_PORTAL_PORT:-3001}"
+API="$CUSTOMER_PORTAL/api"
+BASE_AUTH="http://localhost:${AUTH_PORT:-8001}"
+BASE_CLAIMS="http://localhost:${CLAIMS_PORT:-8002}"
 
-echo "=== Verifying seed data ==="
-docker compose exec -T postgres psql -U eclaims -d eclaims \
-  -c "SELECT email, role FROM users ORDER BY role;"
+BODY=$(mktemp); FILE=$(mktemp)
+trap 'rm -f "$BODY" "$FILE"' EXIT
 
-docker compose exec -T postgres psql -U eclaims -d eclaims \
-  -c "SELECT claim_number, status, claimed_amount FROM claims ORDER BY claim_number;"
+pass() { echo "   ✓ $*"; }
+fail() { echo "   ✗ $*" >&2; exit 1; }
+json() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print($1)" "$BODY"; }
 
-echo ""
-echo "=== API smoke tests ==="
+# expect <status> <description> <curl args...>: run the request and require the given HTTP status.
+expect() {
+  local want=$1 desc=$2; shift 2
+  local got; got=$(curl -s -o "$BODY" -w '%{http_code}' "$@")
+  if [ "$got" = "$want" ]; then pass "$desc ($got)"; else fail "$desc: expected $want, got $got: $(head -c 300 "$BODY")"; fi
+}
+login() {  # prints only the token on stdout, so it can be captured with $(login ...)
+  expect 200 "login $1" -X POST "$API/auth/login" -H 'Content-Type: application/json' \
+    -d "{\"email\":\"$1\",\"password\":\"Test1234!\"}" >&2
+  json "d['access_token']"
+}
+patch_status() {  # patch_status <want> <description> <token> <claim_id> <json body>
+  expect "$1" "$2" -X PATCH "$API/claims/$4/status" -H "Authorization: Bearer $3" \
+    -H 'Content-Type: application/json' -d "$5"
+}
+make_pdf() { python3 -c "import os,sys; open(sys.argv[1],'wb').write(b'%PDF-1.4\n' + os.urandom(int(sys.argv[2])))" "$FILE" "$1"; }
 
-echo "1. Login as customer..."
-LOGIN_RESP=$(curl -sf -X POST "$BASE_AUTH/auth/login" \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"customer@test.com","password":"Test1234!"}')
-TOKEN=$(echo "$LOGIN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-REFRESH_TOKEN=$(echo "$LOGIN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['refresh_token'])")
-echo "   access_token obtained (${#TOKEN} chars)"
+echo "=== Seed data ==="
+users=$(docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "select count(*) from users where email in (
+  '"'"'customer@test.com'"'"','"'"'adjuster@test.com'"'"','"'"'surveyor@test.com'"'"',
+  '"'"'casemanager@test.com'"'"','"'"'auditor@test.com'"'"','"'"'manager@test.com'"'"')"' | tr -d '[:space:]')
+[ "$users" = "6" ] && pass "6 seeded demo users" || fail "expected 6 seeded demo users, found $users"
 
-echo "2. GET /users/me..."
-curl -sf "$BASE_AUTH/users/me" \
-  -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'   {d[\"email\"]} role={d[\"role\"]}')"
-
-echo "3. Submit a claim..."
-CLAIM=$(curl -sf -X POST "$BASE_CLAIMS/claims" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"policy_number":"POL-SMOKE","incident_date":"2026-06-01","incident_description":"Smoke test rear-end collision at intersection","claimed_amount":25000}')
-CLAIM_ID=$(echo "$CLAIM" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-CLAIM_NUM=$(echo "$CLAIM" | python3 -c "import sys,json; print(json.load(sys.stdin)['claim_number'])")
-echo "   Created $CLAIM_NUM (id=$CLAIM_ID)"
-
-echo "4. POST /auth/register (new user)..."
-TS=$(date +%s)
-REG=$(curl -sf -X POST "$BASE_AUTH/auth/register" \
-  -H 'Content-Type: application/json' \
-  -d "{\"email\":\"smoketest_${TS}@test.com\",\"password\":\"Test1234!\",\"full_name\":\"Smoke Tester\"}")
-echo "$REG" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'   registered {d[\"email\"]}')"
-
-echo "5. POST /auth/refresh..."
-NEW_TOKEN=$(curl -sf -X POST "$BASE_AUTH/auth/refresh" \
-  -H 'Content-Type: application/json' \
-  -d "{\"refresh_token\":\"$REFRESH_TOKEN\"}" \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-echo "   new access_token obtained (${#NEW_TOKEN} chars)"
-TOKEN=$NEW_TOKEN
-
-echo "6. PATCH /users/me..."
-UPDATED=$(curl -sf -X PATCH "$BASE_AUTH/users/me" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"full_name":"Customer Updated"}')
-echo "$UPDATED" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'   full_name={d[\"full_name\"]}')"
-
-echo "7. GET /users/all (as case manager)..."
-CM_TOKEN=$(curl -sf -X POST "$BASE_AUTH/auth/login" \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"casemanager@test.com","password":"Test1234!"}' \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-curl -sf "$BASE_AUTH/users/all" \
-  -H "Authorization: Bearer $CM_TOKEN" \
-  | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'   {len(d)} users returned')"
-
-echo "8. GET /claims (list)..."
-curl -sf "$BASE_CLAIMS/claims" \
-  -H "Authorization: Bearer $TOKEN" \
-  | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'   total={d[\"total\"]} items={len(d[\"items\"])}')"
-
-echo "9. GET /claims/{claim_id}..."
-FETCHED=$(curl -sf "$BASE_CLAIMS/claims/$CLAIM_ID" \
-  -H "Authorization: Bearer $TOKEN")
-echo "$FETCHED" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'   {d[\"claim_number\"]} status={d[\"status\"]}')"
-
-echo "10. PATCH /claims/{claim_id}/status (SUBMITTED -> ASSIGNED)..."
-STATUS_RESP=$(curl -sf -X PATCH "$BASE_CLAIMS/claims/$CLAIM_ID/status" \
-  -H "Authorization: Bearer $CM_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"status":"ASSIGNED","note":"Smoke test status transition"}')
-echo "$STATUS_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'   status={d[\"status\"]}')"
-
-echo "11. GET /claims/{claim_id}/history..."
-HISTORY=$(curl -sf "$BASE_CLAIMS/claims/$CLAIM_ID/history" \
-  -H "Authorization: Bearer $TOKEN")
-echo "$HISTORY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'   {len(d)} history entr(ies)')"
-
-echo "12. POST /claims/{claim_id}/documents (upload PDF)..."
-TMPFILE=$(mktemp /tmp/smoketest_XXXXXX.pdf)
-printf '%%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/MediaBox[0 0 3 3]>>endobj\nxref\n0 4\n0000000000 65535 f\n0000000009 00000 n\n0000000058 00000 n\n0000000115 00000 n\ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n190\n%%%%EOF\n' > "$TMPFILE"
-DOC_RESP=$(curl -sf -X POST "$BASE_CLAIMS/claims/$CLAIM_ID/documents" \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@$TMPFILE;type=application/pdf")
-rm -f "$TMPFILE"
-DOC_ID=$(echo "$DOC_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-echo "   uploaded doc id=$DOC_ID"
-
-echo "13. GET /claims/{claim_id}/documents..."
-DOCS=$(curl -sf "$BASE_CLAIMS/claims/$CLAIM_ID/documents" \
-  -H "Authorization: Bearer $TOKEN")
-echo "$DOCS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'   {len(d)} document(s) listed')"
-
-echo "14. GET /claims/{claim_id}/documents/{doc_id}/download..."
-curl -sf "$BASE_CLAIMS/claims/$CLAIM_ID/documents/$DOC_ID/download" \
-  -H "Authorization: Bearer $TOKEN" \
-  -o /dev/null
-echo "   download OK"
-
-echo "15. Security headers check..."
-HEADERS=$(curl -sI http://localhost:3000)
-for header in "X-Frame-Options: DENY" "X-Content-Type-Options: nosniff" "Referrer-Policy:"; do
-  if echo "$HEADERS" | grep -qi "$header"; then
-    echo "   ✓ $header"
-  else
-    echo "   ✗ MISSING: $header" >&2
-  fi
+echo "=== Edge (nginx) ==="
+for portal in "$CUSTOMER_PORTAL" "$INTERNAL_PORTAL"; do
+  headers=$(curl -sI "$portal/")
+  for header in "X-Frame-Options: DENY" "X-Content-Type-Options: nosniff" "Referrer-Policy:" "Content-Security-Policy:"; do
+    echo "$headers" | grep -qi "$header" || fail "$portal is missing header $header"
+  done
+  pass "security headers on $portal"
+  type=$(curl -s -o /dev/null -w '%{http_code} %{content_type}' -H 'Accept: text/html' "$portal/claims/00000000-0000-0000-0000-000000000000")
+  [[ "$type" == "200 text/html"* ]] && pass "deep link /claims/:id renders the app on $portal" || fail "deep link on $portal returned $type"
 done
+expect 401 "wrong password is refused" -X POST "$API/auth/login" -H 'Content-Type: application/json' \
+  -d '{"email":"customer@test.com","password":"wrong-password"}'
+expect 401 "unauthenticated API call is refused" "$API/claims"
 
-echo ""
-echo "=== Health checks ==="
-echo "auth-service:   $(curl -sf $BASE_AUTH/health)"
-echo "claims-service: $(curl -sf $BASE_CLAIMS/health)"
+echo "=== Accounts ==="
+ALICE=$(login customer@test.com)
+CM=$(login casemanager@test.com)
+SURVEYOR=$(login surveyor@test.com)
+ADJUSTOR=$(login adjuster@test.com)
+SMOKE_EMAIL="smoke_$(date +%s)_$RANDOM@test.com"
+expect 201 "register a smoke-test customer" -X POST "$API/auth/register" -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$SMOKE_EMAIL\",\"password\":\"Test1234!\",\"full_name\":\"Smoke Test\"}"
+expect 200 "login smoke-test customer" -X POST "$API/auth/login" -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$SMOKE_EMAIL\",\"password\":\"Test1234!\"}"
+CUSTOMER=$(json "d['access_token']")
+REFRESH=$(json "d['refresh_token']")
+expect 200 "refresh issues a new access token" -X POST "$API/auth/refresh" -H 'Content-Type: application/json' \
+  -d "{\"refresh_token\":\"$REFRESH\"}"
+[ "$(json "d['access_token']")" != "$CUSTOMER" ] && pass "refreshed token differs" || fail "refresh returned the same token"
+
+echo "=== Claim journey ==="
+expect 201 "customer submits a claim" -X POST "$API/claims" -H "Authorization: Bearer $CUSTOMER" \
+  -H 'Content-Type: application/json' \
+  -d '{"policy_number":"AUTO-900001","incident_date":"2026-09-29","incident_description":"Smoke test: rear bumper cracked in a car park.","claimed_amount":4200}'
+CLAIM=$(json "d['id']")
+expect 422 "a claim with a blank policy number and a future incident date is refused" -X POST "$API/claims" \
+  -H "Authorization: Bearer $CUSTOMER" -H 'Content-Type: application/json' \
+  -d '{"policy_number":"  ","incident_date":"2999-01-01","incident_description":"Smoke test: this claim must not be created.","claimed_amount":100}'
+expect 422 "an amount the database cannot hold is refused" -X POST "$API/claims" \
+  -H "Authorization: Bearer $CUSTOMER" -H 'Content-Type: application/json' \
+  -d '{"policy_number":"AUTO-900001","incident_date":"2026-09-29","incident_description":"Smoke test: this claim must not be created.","claimed_amount":99999999999.99}'
+expect 200 "history starts at SUBMITTED" "$API/claims/$CLAIM/history" -H "Authorization: Bearer $CUSTOMER"
+[ "$(json "d[0]['to_status']")" = "SUBMITTED" ] && pass "first history row is SUBMITTED" || fail "history does not start at SUBMITTED"
+
+make_pdf $((2 * 1024 * 1024))
+expect 201 "2 MB photo-sized PDF uploads through nginx" -X POST "$API/claims/$CLAIM/documents" \
+  -H "Authorization: Bearer $CUSTOMER" -F "file=@$FILE;filename=police-report.pdf;type=application/pdf"
+make_pdf $((11 * 1024 * 1024))
+expect 413 "11 MB upload is refused" -X POST "$API/claims/$CLAIM/documents" \
+  -H "Authorization: Bearer $CUSTOMER" -F "file=@$FILE;filename=too-big.pdf;type=application/pdf"
+python3 -c "import sys; open(sys.argv[1],'wb').write(b'MZ' + bytes(200))" "$FILE"
+expect 415 "executable disguised as a PDF is refused" -X POST "$API/claims/$CLAIM/documents" \
+  -H "Authorization: Bearer $CUSTOMER" -F "file=@$FILE;filename=invoice.pdf;type=application/pdf"
+expect 403 "another customer cannot read the claim" "$API/claims/$CLAIM" -H "Authorization: Bearer $ALICE"
+
+expect 200 "case manager reads the staff directory" "$API/users/all" -H "Authorization: Bearer $CM"
+SURVEYOR_ID=$(json "[u['id'] for u in d if u['role'] == 'SURVEYOR'][0]")
+CUSTOMER_ID=$(json "[u['id'] for u in d if u['role'] == 'CUSTOMER'][0]")
+expect 400 "a claim cannot be assigned to a customer" -X POST "$API/claims/$CLAIM/assign" \
+  -H "Authorization: Bearer $CM" -H 'Content-Type: application/json' -d "{\"assigned_to\":\"$CUSTOMER_ID\"}"
+expect 400 "a claim cannot be assigned to an unknown user" -X POST "$API/claims/$CLAIM/assign" \
+  -H "Authorization: Bearer $CM" -H 'Content-Type: application/json' -d '{"assigned_to":"00000000-0000-4000-8000-000000000000"}'
+expect 200 "case manager assigns the claim to a surveyor" -X POST "$API/claims/$CLAIM/assign" \
+  -H "Authorization: Bearer $CM" -H 'Content-Type: application/json' -d "{\"assigned_to\":\"$SURVEYOR_ID\"}"
+[ "$(json "d['status']")" = "ASSIGNED" ] && pass "claim is ASSIGNED" || fail "claim not ASSIGNED after assignment"
+
+patch_status 200 "surveyor starts the survey" "$SURVEYOR" "$CLAIM" '{"status":"UNDER_SURVEY"}'
+patch_status 400 "survey cannot complete without an assessed amount" "$SURVEYOR" "$CLAIM" '{"status":"SURVEYED","note":"Bumper replacement"}'
+patch_status 200 "surveyor completes the survey with an assessed amount" "$SURVEYOR" "$CLAIM" \
+  '{"status":"SURVEYED","note":"Bumper replacement","assessed_amount":3900}'
+patch_status 200 "adjustor starts adjudication" "$ADJUSTOR" "$CLAIM" '{"status":"UNDER_ADJUDICATION"}'
+patch_status 400 "approval above the claimed amount is refused" "$ADJUSTOR" "$CLAIM" '{"status":"APPROVED","approved_amount":5000}'
+patch_status 200 "adjustor approves an amount" "$ADJUSTOR" "$CLAIM" '{"status":"APPROVED","approved_amount":3650}'
+expect 200 "customer reads the decision" "$API/claims/$CLAIM" -H "Authorization: Bearer $CUSTOMER"
+[ "$(json "d['status'], d['approved_amount']")" = "APPROVED 3650.00" ] && pass "customer sees APPROVED with 3650.00" \
+  || fail "customer sees $(json "d['status'], d['approved_amount']")"
+patch_status 400 "an override to the current status is refused" "$CM" "$CLAIM" '{"status":"APPROVED","note":"Lower it","approved_amount":1}'
+patch_status 200 "adjustor marks the claim paid" "$ADJUSTOR" "$CLAIM" '{"status":"PAID"}'
+patch_status 400 "a paid claim is final" "$CM" "$CLAIM" '{"status":"UNDER_ADJUDICATION","note":"Reopen"}'
+
+expect 201 "customer submits a second claim" -X POST "$API/claims" -H "Authorization: Bearer $CUSTOMER" \
+  -H 'Content-Type: application/json' \
+  -d '{"policy_number":"AUTO-900001","incident_date":"2026-09-29","incident_description":"Smoke test: duplicate report of the same incident.","claimed_amount":1200}'
+SECOND=$(json "d['id']")
+patch_status 400 "an override needs a reason" "$CM" "$SECOND" '{"status":"REJECTED"}'
+patch_status 400 "no claim is paid without an approved amount" "$CM" "$SECOND" '{"status":"PAID","note":"Pay now"}'
+patch_status 200 "case manager overrides with a reason" "$CM" "$SECOND" '{"status":"REJECTED","note":"Duplicate of an existing claim"}'
+expect 200 "override is in the audit trail" "$API/claims/$SECOND/history" -H "Authorization: Bearer $CM"
+[[ "$(json "d[-1]['note']")" == "Case manager override: "* ]] && pass "history records the override and its reason" \
+  || fail "override not recorded: $(json "d[-1]['note']")"
+[ "$(json "d[-1]['changed_by_name']")" = "David Case" ] && pass "history names who made the override" \
+  || fail "override actor recorded as $(json "d[-1]['changed_by_name']")"
+expect 400 "a closed claim cannot be reassigned" -X POST "$API/claims/$SECOND/assign" \
+  -H "Authorization: Bearer $CM" -H 'Content-Type: application/json' -d "{\"assigned_to\":\"$SURVEYOR_ID\"}"
+
+echo "=== Health ==="
+expect 200 "auth-service health" "$BASE_AUTH/health"
+expect 200 "claims-service health" "$BASE_CLAIMS/health"
+[ "$(json "d['status']")" = "ok" ] && pass "claims-service reports db and redis ok" || fail "claims-service health: $(cat "$BODY")"
 
 echo ""
 echo "=== Smoke test PASSED ==="
 echo ""
 echo "Open in browser:"
-echo "  Customer Portal : http://localhost:3000  (customer@test.com / Test1234!)"
-echo "  Internal Portal : http://localhost:3001  (casemanager@test.com / Test1234!)"
+echo "  Customer Portal : $CUSTOMER_PORTAL  (customer@test.com / Test1234!)"
+echo "  Internal Portal : $INTERNAL_PORTAL  (casemanager@test.com / Test1234!)"

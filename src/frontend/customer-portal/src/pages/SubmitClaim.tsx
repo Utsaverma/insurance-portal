@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { submitClaim, uploadDocument } from '../api/claims'
+import { submitClaim, uploadDocument, type Claim } from '../api/claims'
+import { apiErrorMessage } from '../api/client'
 import { FileUpload } from '../components/FileUpload'
 import { CONTENT_WIDTH } from '../components/layout/shell'
 import {
@@ -15,28 +16,52 @@ import {
   Textarea,
 } from '../components/ui'
 
+/** Today in the customer's own time zone, as YYYY-MM-DD. toISOString() gives the
+ *  UTC date, which is yesterday or tomorrow for part of every day elsewhere. */
+function localToday(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 export function SubmitClaim() {
   const navigate = useNavigate()
-  const today = new Date().toISOString().split('T')[0]
+  const today = localToday()
   const [form, setForm] = useState({ policy_number: '', incident_date: '', incident_description: '', claimed_amount: '' })
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  // Set once the claim exists on the server. If its document then fails to upload,
+  // the form retries the upload only: submitting again would file the claim twice.
+  const [created, setCreated] = useState<Claim | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }))
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (form.incident_description.length < 20) { setError('Description must be at least 20 characters.'); return }
+    if (form.incident_description.trim().length < 20) { setError('Description must be at least 20 characters.'); return }
     setError('')
     setLoading(true)
+
+    let claim = created
+    if (!claim) {
+      try {
+        claim = await submitClaim({ ...form, claimed_amount: Number(form.claimed_amount) })
+        setCreated(claim)
+      } catch (err) {
+        setError(apiErrorMessage(err, 'Failed to submit claim. Please try again.'))
+        setLoading(false)
+        return
+      }
+    }
+
     try {
-      const claim = await submitClaim({ ...form, claimed_amount: Number(form.claimed_amount) })
       if (selectedFile) await uploadDocument(claim.id, selectedFile)
       navigate(`/claims/${claim.id}`)
-    } catch {
-      setError('Failed to submit claim. Please try again.')
+    } catch (err) {
+      setUploadError(apiErrorMessage(err, 'The document could not be uploaded.'))
     } finally {
       setLoading(false)
     }
@@ -50,10 +75,12 @@ export function SubmitClaim() {
           <CardBody size="lg">
             <form onSubmit={handleSubmit} className="space-y-4">
               {[
-                { label: 'Policy Number', name: 'policy_number', type: 'text' },
+                { label: 'Policy Number', name: 'policy_number', type: 'text', maxLength: 50 },
                 { label: 'Incident Date', name: 'incident_date', type: 'date', max: today },
-                { label: 'Claimed Amount (₹)', name: 'claimed_amount', type: 'number' },
-              ].map(({ label, name, type, max }) => (
+                // step: without it a number input only accepts whole dollars.
+                // max: the largest amount the claims database can hold.
+                { label: 'Claimed Amount (USD)', name: 'claimed_amount', type: 'number', min: '0.01', max: '9999999999.99', step: '0.01' },
+              ].map(({ label, name, type, max, min, step, maxLength }) => (
                 <Input
                   key={name}
                   label={label}
@@ -61,7 +88,11 @@ export function SubmitClaim() {
                   name={name}
                   value={(form as Record<string, string>)[name]}
                   max={max}
+                  min={min}
+                  step={step}
+                  maxLength={maxLength}
                   onChange={handleChange}
+                  disabled={!!created}
                   required
                 />
               ))}
@@ -71,8 +102,10 @@ export function SubmitClaim() {
                 name="incident_description"
                 value={form.incident_description}
                 onChange={handleChange}
+                disabled={!!created}
                 required
                 rows={4}
+                maxLength={5000}
               />
               {/* FileUpload manages its own error text, so Field only supplies
                   the label wiring — but that wiring is the point: no label in
@@ -87,10 +120,37 @@ export function SubmitClaim() {
                   />
                 )}
               </Field>
-              {error && <Alert tone="danger">{error}</Alert>}
-              <Button type="submit" size="lg" fullWidth loading={loading}>
-                {loading ? 'Submitting…' : 'Submit Claim'}
-              </Button>
+              {created && uploadError !== null ? (
+                <>
+                  <Alert tone="warning">
+                    Claim {created.claim_number} was submitted, but its document was not attached:{' '}
+                    {/[.!?]$/.test(uploadError) ? uploadError : `${uploadError}.`}{' '}
+                    Choose another file to try again, or continue without one.
+                  </Alert>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button type="submit" size="lg" fullWidth loading={loading} disabled={!selectedFile}>
+                      {loading ? 'Uploading…' : 'Attach Document'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="lg"
+                      fullWidth
+                      disabled={loading}
+                      onClick={() => navigate(`/claims/${created.id}`)}
+                    >
+                      Continue Without a Document
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {error && <Alert tone="danger">{error}</Alert>}
+                  <Button type="submit" size="lg" fullWidth loading={loading}>
+                    {loading ? 'Submitting…' : 'Submit Claim'}
+                  </Button>
+                </>
+              )}
             </form>
           </CardBody>
         </Card>

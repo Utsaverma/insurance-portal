@@ -33,6 +33,9 @@ class Claim(Base):
     incident_date: Mapped[date] = mapped_column(Date, nullable=False)
     incident_description: Mapped[str] = mapped_column(Text, nullable=False)
     claimed_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    # Set by the surveyor (SURVEYED) and the adjustor (APPROVED); see services.claims_service.
+    assessed_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    approved_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     status: Mapped[ClaimStatus] = mapped_column(
         SAEnum(ClaimStatus, name="claim_status", create_type=False),
         nullable=False,
@@ -64,6 +67,8 @@ class ClaimStatusHistory(Base):
     from_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     to_status: Mapped[str] = mapped_column(String(50), nullable=False)
     changed_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    # The actor's name as it was when they acted, so the audit record never depends on a later lookup.
+    changed_by_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     changed_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 

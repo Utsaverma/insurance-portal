@@ -81,9 +81,8 @@ export interface SelectProps
 
 /**
  * A styled *native* <select>, deliberately not a Headless UI Listbox: native
- * keeps the OS picker on mobile, and both ClaimsTable and StatusActionPanel
- * depend on native onChange semantics (the latter fires a mutating API call
- * from it).
+ * keeps the OS picker on mobile, and ClaimsTable's status filter depends on
+ * native onChange semantics.
  */
 export function Select({
   label,

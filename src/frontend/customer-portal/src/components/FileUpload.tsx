@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react'
-import { UploadCloud } from 'lucide-react'
+import { UploadCloud, X } from 'lucide-react'
 import { cn } from '../lib/cn'
 import { ErrorText } from './ui'
 
@@ -13,7 +13,8 @@ function validateFile(file: File): string | null {
 }
 
 interface Props {
-  onFileSelect: (file: File) => void
+  /** The chosen file, or null when the choice is cleared or fails validation. */
+  onFileSelect: (file: File | null) => void
   disabled?: boolean
   id?: string
   'aria-describedby'?: string
@@ -27,10 +28,18 @@ export function FileUpload({ onFileSelect, disabled, id, ...aria }: Props) {
 
   const handleFile = (file: File) => {
     const err = validateFile(file)
-    if (err) { setError(err); setSelected(null); return }
+    // The parent is told about a refused file too: it used to keep the previously
+    // chosen one and upload it, although this box no longer showed it.
+    if (err) { setError(err); setSelected(null); onFileSelect(null); return }
     setError(null)
     setSelected(file)
     onFileSelect(file)
+  }
+
+  const clear = () => {
+    setError(null)
+    setSelected(null)
+    onFileSelect(null)
   }
 
   const open = () => !disabled && inputRef.current?.click()
@@ -90,8 +99,23 @@ export function FileUpload({ onFileSelect, disabled, id, ...aria }: Props) {
         className="hidden"
         tabIndex={-1}
         disabled={disabled}
-        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          // Reset, so picking the same file again (after removing it) still fires onChange.
+          e.target.value = ''
+          if (f) handleFile(f)
+        }}
       />
+      {selected && !disabled && (
+        <button
+          type="button"
+          onClick={clear}
+          className="mt-1 inline-flex items-center gap-1 text-xs text-link hover:text-link-hover hover:underline"
+        >
+          <X aria-hidden className="h-3 w-3" />
+          Remove file
+        </button>
+      )}
       {error && <ErrorText className="mt-1">{error}</ErrorText>}
     </div>
   )

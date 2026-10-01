@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.db_models import User
@@ -11,8 +11,12 @@ class UserRepository:
         self.db = db
 
     async def get_by_email(self, email: str) -> User | None:
-        result = await self.db.execute(select(User).where(User.email == email))
-        return result.scalar_one_or_none()
+        # Case-insensitive, oldest first: accounts registered before emails were normalised may be
+        # stored in mixed case, and two of them may differ only by case.
+        result = await self.db.execute(
+            select(User).where(func.lower(User.email) == email.lower()).order_by(User.created_at)
+        )
+        return result.scalars().first()
 
     async def get_by_id(self, user_id: UUID) -> User | None:
         result = await self.db.execute(select(User).where(User.id == user_id))

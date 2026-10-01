@@ -127,3 +127,33 @@ async def test_refresh_with_access_token_rejected(client, registered_user):
     access_token = login.json()["access_token"]
     resp = await client.post("/auth/refresh", json={"refresh_token": access_token})
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_email_is_case_insensitive(client):
+    first = await client.post(
+        "/auth/register",
+        json={"email": "Mixed.Case@Example.com", "password": "Password1!", "full_name": "Mixed Case"},
+    )
+    assert first.status_code == 201
+    assert first.json()["email"] == "mixed.case@example.com"
+
+    duplicate = await client.post(
+        "/auth/register",
+        json={"email": "mixed.case@EXAMPLE.com", "password": "Password1!", "full_name": "Mixed Case"},
+    )
+    assert duplicate.status_code == 409
+
+    login = await client.post("/auth/login", json={"email": "MIXED.CASE@example.com", "password": "Password1!"})
+    assert login.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_deactivated_user_cannot_log_in(client, db_session, registered_user):
+    from repositories.user_repository import UserRepository
+
+    repo = UserRepository(db_session)
+    await repo.update(await repo.get_by_email(CANNED_EMAIL), is_active=False)
+
+    resp = await client.post("/auth/login", json={"email": CANNED_EMAIL, "password": CANNED_PASSWORD})
+    assert resp.status_code == 401

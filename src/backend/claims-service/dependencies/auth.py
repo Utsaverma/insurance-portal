@@ -1,5 +1,4 @@
 import uuid
-from typing import Optional
 
 import httpx
 from fastapi import Depends, HTTPException, Request, status
@@ -8,30 +7,40 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from config import settings
 from models.schemas import UserContext
 
-_http_client: Optional[httpx.AsyncClient] = None
+
+# auto_error=False: FastAPI's own "no credentials" answer is 403, but a missing token is 401, the
+# status the portals act on to send the user back to the login page.
+_bearer = HTTPBearer(auto_error=False)
 
 
-def get_http_client() -> httpx.AsyncClient:
-    if _http_client is None:
-        raise RuntimeError("HTTP client not initialised")
-    return _http_client
+def _token_from(credentials: HTTPAuthorizationCredentials | None) -> str:
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return credentials.credentials
 
 
 async def get_current_user(
     request: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> UserContext:
-    token = credentials.credentials
-    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    token = _token_from(credentials)
+    # A JWT is always ASCII; anything else cannot even be forwarded as a header, so refuse it as invalid.
+    if not token.isascii():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
     client = request.app.state.http_client
     try:
         resp = await client.get(
             f"{settings.auth_service_url}/users/me",
-            headers={"Authorization": f"Bearer {token}", "X-Request-ID": request_id},
+            headers={"Authorization": f"Bearer {token}", "X-Request-ID": request.state.request_id},
             timeout=5.0,
         )
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Auth service timeout")
+    except httpx.HTTPError:
+        # Timeouts and refused connections alike: the caller did nothing wrong, the dependency is down.
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Auth service unavailable")
     if resp.status_code in (401, 403):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
     if not resp.is_success:
@@ -48,9 +57,9 @@ async def get_current_user(
 
 
 async def get_bearer_token(
-    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> str:
-    return credentials.credentials
+    return _token_from(credentials)
 
 
 def require_role(*roles: str):

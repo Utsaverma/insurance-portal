@@ -48,3 +48,9 @@ export function profileToUser(profile: UserProfileResponse): AuthUser {
     role: profile.role,
   }
 }
+
+const STAFF_ROLES = ['CASE_MANAGER', 'SURVEYOR', 'ADJUSTOR', 'AUDITOR', 'REGIONAL_MANAGER']
+
+/** Who this portal is for. The API enforces access per role either way; this
+ *  keeps customers out of screens that are not built for them. */
+export const canUsePortal = (role: string): boolean => STAFF_ROLES.includes(role)

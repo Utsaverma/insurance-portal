@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import bcrypt
 from fastapi import HTTPException, status
@@ -20,7 +20,8 @@ def verify_password(plain: str, hashed: str) -> bool:
 def create_jwt(data: dict, expires_delta: timedelta) -> str:
     payload = data.copy()
     now = datetime.now(timezone.utc)
-    payload.update({"iat": now, "exp": now + expires_delta})
+    # jti makes every token unique, even two minted for the same user in the same second.
+    payload.update({"iat": now, "exp": now + expires_delta, "jti": uuid4().hex})
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 

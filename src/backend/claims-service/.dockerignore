@@ -1,0 +1,10 @@
+# Keep local-only and generated files out of the image (a local .env would otherwise be baked in).
+.env
+.env.*
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+uploads/
+.DS_Store

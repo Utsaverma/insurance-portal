@@ -42,3 +42,13 @@ async def test_role_restricted_endpoint_returns_403(client, registered_user):
     token = await _login(client)
     resp = await client.get("/users/all", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", [None, "", "   "])
+async def test_patch_me_rejects_a_missing_or_blank_name(client, registered_user, name):
+    token = await _login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = await client.patch("/users/me", headers=headers, json={"full_name": name})
+    assert resp.status_code == 422
+    assert (await client.get("/users/me", headers=headers)).json()["full_name"] == "Test User"

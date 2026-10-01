@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import type { AuthUser } from '../types'
-import { profileToUser, tokenToUser } from '../lib/user'
+import { canUsePortal, profileToUser, tokenToUser } from '../lib/user'
 import { me } from '../api/auth'
 
 interface AuthContextValue {
@@ -13,16 +13,24 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
+/** The stored session, if it is one this portal accepts. An unreadable token,
+ *  or one for a staff account, is dropped rather than half-trusted. */
+function readSession(): { token: string; user: AuthUser } | null {
+  const token = localStorage.getItem('eclaims_token')
+  const user = token ? tokenToUser(token) : null
+  if (!token || !user || !canUsePortal(user.role)) {
+    localStorage.removeItem('eclaims_token')
+    return null
+  }
+  return { token, user }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(() =>
-    localStorage.getItem('eclaims_token')
-  )
   // Hydrated from the stored token in the initialiser so the header has a name
   // on the very first render, with no loading flash and no round trip.
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
-    const stored = localStorage.getItem('eclaims_token')
-    return stored ? tokenToUser(stored) : null
-  })
+  const [initial] = useState(readSession)
+  const [token, setToken] = useState<string | null>(initial?.token ?? null)
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(initial?.user ?? null)
 
   // Reconcile against the authoritative profile once per boot. This picks up a
   // name changed via PATCH /users/me since the token was minted, and doubles as

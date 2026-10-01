@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import select, func, text
@@ -49,7 +50,8 @@ class ClaimRepository:
             q = q.where(Claim.customer_id == customer_id)
             count_q = count_q.where(Claim.customer_id == customer_id)
         total = (await self.db.execute(count_q)).scalar_one()
-        items = (await self.db.execute(q.offset(skip).limit(limit))).scalars().all()
+        # Newest first, so paging is deterministic and the queue shows recent claims at the top.
+        items = (await self.db.execute(q.order_by(Claim.created_at.desc()).offset(skip).limit(limit))).scalars().all()
         return list(items), total
 
     async def update_status(
@@ -58,20 +60,39 @@ class ClaimRepository:
         new_status: ClaimStatus,
         changed_by: uuid.UUID,
         note: Optional[str] = None,
+        assessed_amount: Optional[Decimal] = None,
+        approved_amount: Optional[Decimal] = None,
+        changed_by_name: Optional[str] = None,
     ) -> Claim:
         old_status = claim.status
         claim.status = new_status
-        history = ClaimStatusHistory(
-            claim_id=claim.id,
-            from_status=old_status,
-            to_status=new_status,
-            changed_by=changed_by,
-            note=note,
-        )
-        self.db.add(history)
+        claim.assessed_amount = assessed_amount
+        claim.approved_amount = approved_amount
+        await self.add_history(claim.id, old_status, new_status, changed_by, note, changed_by_name)
         await self.db.flush()
         await self.db.refresh(claim)
         return claim
+
+    async def add_history(
+        self,
+        claim_id: uuid.UUID,
+        from_status: Optional[ClaimStatus],
+        to_status: ClaimStatus,
+        changed_by: uuid.UUID,
+        note: Optional[str] = None,
+        changed_by_name: Optional[str] = None,
+    ) -> None:
+        self.db.add(
+            ClaimStatusHistory(
+                claim_id=claim_id,
+                from_status=from_status,
+                to_status=to_status,
+                changed_by=changed_by,
+                changed_by_name=changed_by_name,
+                note=note,
+            )
+        )
+        await self.db.flush()
 
     async def assign(
         self,
@@ -79,18 +100,14 @@ class ClaimRepository:
         assigned_to: uuid.UUID,
         changed_by: uuid.UUID,
         new_status: Optional[ClaimStatus],
+        note: Optional[str] = None,
+        changed_by_name: Optional[str] = None,
     ) -> Claim:
         claim.assigned_to = assigned_to
-        if new_status is not None:
-            history = ClaimStatusHistory(
-                claim_id=claim.id,
-                from_status=claim.status,
-                to_status=new_status,
-                changed_by=changed_by,
-                note=f"Assigned to {assigned_to}",
-            )
-            claim.status = new_status
-            self.db.add(history)
+        # Every assignment is audited. A reassignment keeps the status, so its from and to are the same.
+        to_status = new_status or claim.status
+        await self.add_history(claim.id, claim.status, to_status, changed_by, note, changed_by_name)
+        claim.status = to_status
         await self.db.flush()
         await self.db.refresh(claim)
         return claim

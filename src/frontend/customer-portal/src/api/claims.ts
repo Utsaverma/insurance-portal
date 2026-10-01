@@ -17,7 +17,11 @@ export interface Claim {
   policy_number: string
   incident_date: string
   incident_description: string
-  claimed_amount: number
+  /** Money is a Decimal on the API, which serialises it as a string ("5850.00"). */
+  claimed_amount: string | number
+  assessed_amount: string | number | null
+  /** Only non-null while the claim is APPROVED or PAID. */
+  approved_amount: string | number | null
   status: ClaimStatus
   assigned_to: string | null
   created_at: string
@@ -30,6 +34,8 @@ export interface ClaimHistoryEntry {
   from_status: string | null
   to_status: string
   changed_by: string
+  /** The actor's name as recorded when they acted. */
+  changed_by_name: string | null
   changed_at: string
   note: string | null
 }
@@ -53,7 +59,8 @@ export interface SubmitClaimPayload {
 }
 
 export const getClaims = async (): Promise<Claim[]> => {
-  const res = await apiClient.get<{ items: Claim[]; total: number }>('/claims')
+  // The API pages at 20 by default; the dashboard lists every claim the customer has.
+  const res = await apiClient.get<{ items: Claim[]; total: number }>('/claims', { params: { limit: 1000 } })
   return res.data.items
 }
 

@@ -35,7 +35,7 @@ class DocumentRepository:
 
     async def list_for_claim(self, claim_id: uuid.UUID) -> list[ClaimDocument]:
         result = await self.db.execute(
-            select(ClaimDocument).where(ClaimDocument.claim_id == claim_id)
+            select(ClaimDocument).where(ClaimDocument.claim_id == claim_id).order_by(ClaimDocument.uploaded_at)
         )
         return list(result.scalars().all())
 

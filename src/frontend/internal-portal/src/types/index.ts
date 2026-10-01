@@ -39,11 +39,15 @@ export interface Claim {
   policy_number: string
   incident_date: string
   incident_description: string
-  claimed_amount: number
+  /** Money is a Decimal on the API, which serialises it as a string ("5850.00"). */
+  claimed_amount: string | number
+  /** Set by the surveyor when the survey completes (SURVEYED). */
+  assessed_amount: string | number | null
+  /** Set by the adjustor on approval; only non-null while APPROVED or PAID. */
+  approved_amount: string | number | null
   status: ClaimStatus
   assigned_to: string | null
   assigned_staff_name?: string
-  approved_amount?: number
   created_at: string
   updated_at: string
 }
@@ -65,6 +69,8 @@ export interface ClaimHistoryEntry {
   from_status: string | null
   to_status: string
   changed_by: string
+  /** The actor's name as recorded when they acted. */
+  changed_by_name: string | null
   changed_at: string
   note: string | null
 }

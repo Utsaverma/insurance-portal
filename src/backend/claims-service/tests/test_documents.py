@@ -18,17 +18,6 @@ async def test_upload_valid_pdf(client, sample_claim, tmp_path, monkeypatch):
     import config
     monkeypatch.setattr(config.settings, "upload_dir", str(tmp_path))
 
-    import services.document_service as ds
-    original = ds.validate_and_store
-
-    async def mock_validate(file, claim_id):
-        contents = await file.read()
-        dest = tmp_path / f"{uuid.uuid4()}.pdf"
-        dest.write_bytes(contents)
-        return str(dest), "application/pdf", len(contents)
-
-    monkeypatch.setattr(ds, "validate_and_store", mock_validate)
-
     resp = await client.post(
         f"/claims/{sample_claim.id}/documents",
         files={"file": ("report.pdf", io.BytesIO(_make_pdf_bytes()), "application/pdf")},
@@ -39,14 +28,10 @@ async def test_upload_valid_pdf(client, sample_claim, tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_upload_exe_disguised_as_pdf_returns_415(client, sample_claim, tmp_path, monkeypatch):
-    import services.document_service as ds
+    import config
+    monkeypatch.setattr(config.settings, "upload_dir", str(tmp_path))
 
-    async def mock_reject(file, claim_id):
-        from fastapi import HTTPException, status
-        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="File content does not match allowed types")
-
-    monkeypatch.setattr(ds, "validate_and_store", mock_reject)
-
+    # Content sniffing sees a Windows executable despite the .pdf name.
     pe_header = b"MZ" + b"\x00" * 100
     resp = await client.post(
         f"/claims/{sample_claim.id}/documents",
@@ -56,18 +41,62 @@ async def test_upload_exe_disguised_as_pdf_returns_415(client, sample_claim, tmp
 
 
 @pytest.mark.asyncio
-async def test_upload_exceeds_10mb_returns_413(client, sample_claim, monkeypatch):
-    import services.document_service as ds
+async def test_upload_content_must_match_its_extension(client, sample_claim, tmp_path, monkeypatch):
+    import config
+    monkeypatch.setattr(config.settings, "upload_dir", str(tmp_path))
 
-    async def mock_too_large(file, claim_id):
-        from fastapi import HTTPException, status
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File exceeds 10 MB limit")
+    # A real JPEG, which is an allowed type, but not what a .pdf may contain.
+    resp = await client.post(
+        f"/claims/{sample_claim.id}/documents",
+        files={"file": ("report.pdf", io.BytesIO(_make_jpeg_bytes()), "application/pdf")},
+    )
+    assert resp.status_code == 415
 
-    monkeypatch.setattr(ds, "validate_and_store", mock_too_large)
+
+@pytest.mark.asyncio
+async def test_upload_keeps_only_the_base_file_name(client, sample_claim, tmp_path, monkeypatch):
+    import config
+    monkeypatch.setattr(config.settings, "upload_dir", str(tmp_path))
 
     resp = await client.post(
         f"/claims/{sample_claim.id}/documents",
-        files={"file": ("big.pdf", io.BytesIO(b"x" * 100), "application/pdf")},
+        files={"file": ("../../etc/report.pdf", io.BytesIO(_make_pdf_bytes()), "application/pdf")},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["filename"] == "report.pdf"
+
+    listed = (await client.get(f"/claims/{sample_claim.id}/documents")).json()
+    assert [d["filename"] for d in listed] == ["report.pdf"]
+    download = await client.get(listed[0]["download_url"])
+    assert download.status_code == 200
+    assert download.content == _make_pdf_bytes()
+
+
+@pytest.mark.asyncio
+async def test_download_of_a_document_whose_file_is_gone_returns_404(client, sample_claim, tmp_path, monkeypatch):
+    import config
+    monkeypatch.setattr(config.settings, "upload_dir", str(tmp_path))
+
+    doc = (await client.post(
+        f"/claims/{sample_claim.id}/documents",
+        files={"file": ("report.pdf", io.BytesIO(_make_pdf_bytes()), "application/pdf")},
+    )).json()
+    for stored in tmp_path.rglob("*.pdf"):
+        stored.unlink()
+
+    resp = await client.get(doc["download_url"])
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_upload_over_size_limit_returns_413(client, sample_claim, tmp_path, monkeypatch):
+    import config
+    monkeypatch.setattr(config.settings, "upload_dir", str(tmp_path))
+    monkeypatch.setattr(config.settings, "max_file_size_mb", 0)  # any non-empty file is now too large
+
+    resp = await client.post(
+        f"/claims/{sample_claim.id}/documents",
+        files={"file": ("big.pdf", io.BytesIO(_make_pdf_bytes()), "application/pdf")},
     )
     assert resp.status_code == 413
 

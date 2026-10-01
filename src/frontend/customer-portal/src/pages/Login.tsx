@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { login as apiLogin } from '../api/auth'
+import { login as apiLogin, loginErrorMessage, WrongPortalError } from '../api/auth'
+import { canUsePortal, tokenToUser } from '../lib/user'
 import { Alert, Button, Card, CardBody, Input, Logo } from '../components/ui'
 
 export function Login() {
@@ -20,10 +21,12 @@ export function Login() {
     setLoading(true)
     try {
       const data = await apiLogin(email, password)
+      const role = data.user?.role ?? tokenToUser(data.access_token)?.role
+      if (!role || !canUsePortal(role)) throw new WrongPortalError()
       login(data.access_token)
       navigate('/dashboard')
-    } catch {
-      setError('Invalid email or password.')
+    } catch (err) {
+      setError(loginErrorMessage(err))
     } finally {
       setLoading(false)
     }

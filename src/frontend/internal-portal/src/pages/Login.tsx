@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { loginErrorMessage } from '../api/auth'
 import { Alert, Button, Card, CardBody, Input, Logo } from '../components/ui'
 
 export function Login() {
@@ -18,8 +19,8 @@ export function Login() {
     setLoading(true)
     try {
       await login(email, password)
-    } catch {
-      setError('Invalid email or password.')
+    } catch (err) {
+      setError(loginErrorMessage(err))
     } finally {
       setLoading(false)
     }

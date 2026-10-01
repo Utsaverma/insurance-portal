@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from enum import Enum
-from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
 
 
 class UserRole(str, Enum):
@@ -13,10 +13,20 @@ class UserRole(str, Enum):
     REGIONAL_MANAGER = "REGIONAL_MANAGER"
 
 
+def _normalise_email(value: str) -> str:
+    """Emails identify an account case-insensitively: Alice@x.com and alice@x.com are one user."""
+    return value.strip().lower()
+
+
 class UserRegisterRequest(BaseModel):
     email: EmailStr
     password: str
-    full_name: str | None = None
+    full_name: str | None = Field(default=None, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def normalise_email(cls, v: str) -> str:
+        return _normalise_email(v)
 
     @field_validator("password")
     @classmethod
@@ -29,6 +39,11 @@ class UserRegisterRequest(BaseModel):
 class UserLoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+    @field_validator("email")
+    @classmethod
+    def normalise_email(cls, v: str) -> str:
+        return _normalise_email(v)
 
 
 class UserResponse(BaseModel):
@@ -57,4 +72,13 @@ class RefreshRequest(BaseModel):
 
 
 class UserUpdateRequest(BaseModel):
-    full_name: str | None = None
+    full_name: str | None = Field(default=None, max_length=255)
+
+    @field_validator("full_name")
+    @classmethod
+    def name_not_blank(cls, v: str | None) -> str:
+        # Runs only when the field is sent. users.full_name is NOT NULL, so an explicit null or a
+        # blank name is refused here instead of failing in the database.
+        if v is None or not v.strip():
+            raise ValueError("full_name cannot be blank")
+        return v.strip()

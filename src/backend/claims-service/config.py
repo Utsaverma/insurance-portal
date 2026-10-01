@@ -5,7 +5,7 @@ from pydantic import computed_field
 class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://localhost/claims_db"
     redis_url: str = "redis://localhost:6379/0"
-    auth_service_url: str = "http://auth-service:8001"
+    auth_service_url: str = "http://auth-service:8000"
     upload_dir: str = "/app/uploads"
     max_file_size_mb: int = 10
     log_level: str = "INFO"

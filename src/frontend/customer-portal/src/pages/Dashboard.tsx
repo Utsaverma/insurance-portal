@@ -2,10 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { FileText, Plus } from 'lucide-react'
 import { getClaims, type Claim } from '../api/claims'
+import { apiErrorMessage } from '../api/client'
 import { ClaimStatusBadge } from '../components/ClaimStatusBadge'
 import { CONTENT_WIDTH } from '../components/layout/shell'
-import { formatINR, formatDate } from '../lib/format'
+import { formatCurrency, formatDate } from '../lib/format'
 import {
+  Alert,
   Button,
   Card,
   EmptyState,
@@ -21,9 +23,14 @@ export function Dashboard() {
   const navigate = useNavigate()
   const [claims, setClaims] = useState<Claim[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    getClaims().then(setClaims).finally(() => setLoading(false))
+    getClaims()
+      .then(setClaims)
+      // Without this a failed load rendered as "You have no claims yet."
+      .catch((e) => setError(apiErrorMessage(e, 'Could not load your claims. Please try again.')))
+      .finally(() => setLoading(false))
   }, [])
 
   const stats = useMemo(() => {
@@ -49,13 +56,15 @@ export function Dashboard() {
 
       {loading && <LoadingBlock />}
 
+      {error && <Alert tone="danger">{error}</Alert>}
+
       {!loading && claims.length > 0 && (
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <StatCard label="Total claims" value={claims.length} size="lg" numeric />
           <StatCard label="In progress" value={stats.open} size="lg" numeric tone="brand" />
           <StatCard
             label="Total claimed"
-            value={formatINR(stats.total)}
+            value={formatCurrency(stats.total)}
             size="lg"
             numeric
             className="col-span-2 sm:col-span-1"
@@ -63,7 +72,7 @@ export function Dashboard() {
         </div>
       )}
 
-      {!loading && claims.length === 0 && (
+      {!loading && !error && claims.length === 0 && (
         <EmptyState
           icon={<FileText aria-hidden className="h-8 w-8" />}
           title="You have no claims yet."
@@ -96,7 +105,13 @@ export function Dashboard() {
                 <ClaimStatusBadge status={c.status} />
               </div>
               <div className="mt-2 text-sm font-medium text-fg tabular-nums">
-                {formatINR(c.claimed_amount)}
+                {formatCurrency(c.claimed_amount)}
+                {(c.status === 'APPROVED' || c.status === 'PAID') && (
+                  <span className="font-normal text-fg-muted">
+                    {' · '}Approved amount{' '}
+                    <span className="font-medium text-fg">{formatCurrency(c.approved_amount)}</span>
+                  </span>
+                )}
               </div>
             </Link>
           </Card>
