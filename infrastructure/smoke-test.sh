@@ -155,6 +155,15 @@ expect 200 "override is in the audit trail" "$API/claims/$SECOND/history" -H "Au
 expect 400 "a closed claim cannot be reassigned" -X POST "$API/claims/$SECOND/assign" \
   -H "Authorization: Bearer $CM" -H 'Content-Type: application/json' -d "{\"assigned_to\":\"$SURVEYOR_ID\"}"
 
+echo "=== Reports ==="
+expect 200 "case manager reads the claims count" "$API/claims?limit=1" -H "Authorization: Bearer $CM"
+TOTAL=$(json "d['total']")
+expect 200 "case manager reads the report through the internal portal" "$INTERNAL_PORTAL/api/reports/summary" \
+  -H "Authorization: Bearer $CM"
+[ "$(json "d['total_claims']")" = "$TOTAL" ] && pass "the report counts every claim ($TOTAL)" \
+  || fail "the report counts $(json "d['total_claims']") of $TOTAL claims"
+expect 403 "reports are not open to surveyors" "$INTERNAL_PORTAL/api/reports/summary" -H "Authorization: Bearer $SURVEYOR"
+
 echo "=== Health ==="
 expect 200 "auth-service health" "$BASE_AUTH/health"
 expect 200 "claims-service health" "$BASE_CLAIMS/health"

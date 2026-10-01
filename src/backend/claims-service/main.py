@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from api.routers import claims as claims_router
 from api.routers import documents as documents_router
+from api.routers import reports as reports_router
 from config import settings
 from dependencies.db import AsyncSessionLocal, engine
 from services.errors import (
@@ -88,6 +89,7 @@ async def request_id_middleware(request: Request, call_next):
 
 app.include_router(claims_router.router)
 app.include_router(documents_router.router)
+app.include_router(reports_router.router)
 
 
 @app.get("/health", tags=["health"])

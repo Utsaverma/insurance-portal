@@ -54,8 +54,9 @@ the four core eClaims capabilities via a single `docker compose up`. See
 - The assigned surveyor or adjustor uploads a survey report, photos or estimates from the claim page
 - Case-manager override: an explicit form with a mandatory reason and a confirmation step
 - Claim detail with the claimed, assessed and approved amounts, document downloads, and the audit trail
-- Reports for case and regional managers, computed in the browser from the latest 1,000 claims: claims per
-  status, approved and paid totals, and the average processing time of closed claims
+- Reports for case and regional managers, aggregated in the database across every claim: claims per status,
+  approved and paid totals, the average processing time of closed claims (submission to the close recorded in the
+  audit trail), open claims by age, and the most recently closed claims
 
 **Platform**
 - Role-based access control for six roles (customer + five internal roles), enforced in the API
@@ -321,6 +322,7 @@ under `/api` (for example `http://localhost:3000/api/claims`).
 | POST   | `/claims/{id}/assign`                             | Bearer | Assign to a surveyor or adjustor (CASE_MANAGER, REGIONAL_MANAGER); a SUBMITTED claim becomes ASSIGNED; closed claims cannot be reassigned |
 | PATCH  | `/claims/{id}/status`                             | Bearer | Change status: role + state-machine gated; `assessed_amount` at SURVEYED, `approved_amount` at APPROVED; PAID only with an approved amount; overrides and rejections need a `note` |
 | GET    | `/claims/{id}/history`                            | Bearer | Audit trail from SUBMITTED: status changes and assignments, each with who acted (`changed_by_name`) |
+| GET    | `/reports/summary`                                | Bearer | Claims report aggregated in SQL (CASE_MANAGER, REGIONAL_MANAGER); served under `/api` by the internal portal only |
 | POST   | `/claims/{id}/documents`                          | Bearer | Upload a document (CUSTOMER on their own claim; SURVEYOR, ADJUSTOR on a claim assigned to them); not once the claim is PAID |
 | GET    | `/claims/{id}/documents`                          | Bearer | List documents for a claim                        |
 | GET    | `/claims/{id}/documents/{doc_id}/download`        | Bearer | Download a document                               |
@@ -412,7 +414,7 @@ Two rules that are easy to break and only fail in the production build:
 # After changing code, rebuild first: docker compose build auth-service claims-service
 cd infrastructure
 docker compose run --rm --no-deps auth-service python -m pytest -q     # 19 tests
-docker compose run --rm --no-deps claims-service python -m pytest -q   # 51 tests
+docker compose run --rm --no-deps claims-service python -m pytest -q   # 54 tests
 ```
 
 Tests use an in-memory SQLite database, a fake Redis and a stubbed auth-service call, so no other
@@ -500,7 +502,7 @@ The POC is a *minimal working* slice of the architecture in `docs/sad/solution-a
 | Document Service (S3 + OpenSearch) | Validated uploads on a local volume | Local, single host |
 | Separate Claims and User databases (RDS PostgreSQL) | One PostgreSQL instance shared by both services | Fewer moving parts |
 | ElastiCache Redis | Redis caching the staff directory | — |
-| Reporting Service + Redshift | Reports page computed in the browser | Small data volumes |
+| Reporting Service + Redshift | `GET /reports/summary` in claims-service, aggregated in SQL on the operational database | Small data volumes; the queries move to a read model or warehouse unchanged in shape |
 | CloudWatch + X-Ray | JSON logs with request-ID correlation across services | — |
 | ECS Fargate, CodePipeline, Terraform | Docker Compose | Local, single host |
 

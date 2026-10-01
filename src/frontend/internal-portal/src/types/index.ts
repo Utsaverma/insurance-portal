@@ -89,3 +89,28 @@ export interface ClaimHistoryEntry {
   changed_at: string
   note: string | null
 }
+
+/** GET /reports/summary: every figure is aggregated by the claims service. */
+export interface ReportSummary {
+  as_of: string
+  total_claims: number
+  by_status: Record<ClaimStatus, number>
+  total_approved_amount: string | number
+  total_paid_amount: string | number
+  closed_claims: number
+  /** Submission to the claim's latest PAID/REJECTED history entry; null with no closed claims. */
+  avg_processing_days: number | null
+  /** Open claims by time since submission, youngest first. */
+  open_ageing: { label: string; min_days: number; max_days: number | null; count: number }[]
+  recently_closed: {
+    id: string
+    claim_number: string
+    policy_number: string
+    status: ClaimStatus
+    claimed_amount: string | number
+    approved_amount: string | number | null
+    submitted_at: string
+    closed_at: string
+    processing_days: number
+  }[]
+}
