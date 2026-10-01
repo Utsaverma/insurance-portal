@@ -106,6 +106,7 @@ expect 403 "another customer cannot read the claim" "$API/claims/$CLAIM" -H "Aut
 
 expect 200 "case manager reads the staff directory" "$API/users/all" -H "Authorization: Bearer $CM"
 SURVEYOR_ID=$(json "[u['id'] for u in d if u['role'] == 'SURVEYOR'][0]")
+ADJUSTOR_ID=$(json "[u['id'] for u in d if u['role'] == 'ADJUSTOR'][0]")
 CUSTOMER_ID=$(json "[u['id'] for u in d if u['role'] == 'CUSTOMER'][0]")
 expect 400 "a claim cannot be assigned to a customer" -X POST "$API/claims/$CLAIM/assign" \
   -H "Authorization: Bearer $CM" -H 'Content-Type: application/json' -d "{\"assigned_to\":\"$CUSTOMER_ID\"}"
@@ -119,7 +120,14 @@ patch_status 200 "surveyor starts the survey" "$SURVEYOR" "$CLAIM" '{"status":"U
 patch_status 400 "survey cannot complete without an assessed amount" "$SURVEYOR" "$CLAIM" '{"status":"SURVEYED","note":"Bumper replacement"}'
 patch_status 200 "surveyor completes the survey with an assessed amount" "$SURVEYOR" "$CLAIM" \
   '{"status":"SURVEYED","note":"Bumper replacement","assessed_amount":3900}'
+[ "$(json "d['assigned_to']")" = "None" ] && pass "a surveyed claim waits unassigned in the adjudication queue" \
+  || fail "surveyed claim still assigned to $(json "d['assigned_to']")"
 patch_status 200 "adjustor starts adjudication" "$ADJUSTOR" "$CLAIM" '{"status":"UNDER_ADJUDICATION"}'
+[ "$(json "d['assigned_to']")" = "$ADJUSTOR_ID" ] && pass "the adjustor who picked the claim up is its assignee" \
+  || fail "claim assigned to $(json "d['assigned_to']") after pickup"
+make_pdf 1024
+expect 403 "staff cannot add documents to a claim assigned to someone else" -X POST "$API/claims/$CLAIM/documents" \
+  -H "Authorization: Bearer $SURVEYOR" -F "file=@$FILE;filename=late-report.pdf;type=application/pdf"
 patch_status 400 "approval above the claimed amount is refused" "$ADJUSTOR" "$CLAIM" '{"status":"APPROVED","approved_amount":5000}'
 patch_status 200 "adjustor approves an amount" "$ADJUSTOR" "$CLAIM" '{"status":"APPROVED","approved_amount":3650}'
 expect 200 "customer reads the decision" "$API/claims/$CLAIM" -H "Authorization: Bearer $CUSTOMER"

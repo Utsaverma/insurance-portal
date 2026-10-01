@@ -15,7 +15,7 @@ from config import settings
 from models.db_models import ClaimDocument
 from models.schemas import UserContext
 from repositories.document_repository import DocumentRepository
-from services.claims_service import get_accessible_claim
+from services.claims_service import ensure_assignee, get_accessible_claim
 from services.errors import FileTooLarge, NotFound, UnsupportedFile
 
 
@@ -67,7 +67,9 @@ async def validate_and_store(
 async def upload_document(
     claim_id: uuid.UUID, file: UploadFile, user: UserContext, db: AsyncSession
 ) -> ClaimDocument:
-    await get_accessible_claim(claim_id, user, db)
+    claim = await get_accessible_claim(claim_id, user, db)
+    # Staff add evidence (a survey report, say) only to the claims they are working.
+    ensure_assignee(user, claim)
     stored_path, mime_type, size = await validate_and_store(file, claim_id)
     return await DocumentRepository(db).create(
         claim_id=claim_id,

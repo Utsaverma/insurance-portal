@@ -63,11 +63,14 @@ class ClaimRepository:
         assessed_amount: Optional[Decimal] = None,
         approved_amount: Optional[Decimal] = None,
         changed_by_name: Optional[str] = None,
+        *,
+        assigned_to: Optional[uuid.UUID],
     ) -> Claim:
         old_status = claim.status
         claim.status = new_status
         claim.assessed_amount = assessed_amount
         claim.approved_amount = approved_amount
+        claim.assigned_to = assigned_to
         await self.add_history(claim.id, old_status, new_status, changed_by, note, changed_by_name)
         await self.db.flush()
         await self.db.refresh(claim)

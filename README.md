@@ -282,6 +282,10 @@ SUBMITTED ──(CASE_MANAGER)──▶ ASSIGNED ──(SURVEYOR)──▶ UNDER
 - Assigning a **SUBMITTED** claim moves it to **ASSIGNED**; later reassignments keep the status. Every assignment
   is recorded in the history, and closed claims (**PAID** or **REJECTED**) cannot be reassigned. A claim is
   assigned only to a **SURVEYOR** or an **ADJUSTOR**.
+- Surveyors and adjustors act only on claims **assigned to them**; anyone else gets `403`. They can still read
+  every claim. Completing the survey leaves the claim unassigned in the adjudication queue. The adjustor who
+  begins adjudication becomes its assignee, unless a case manager has already assigned a specific adjustor.
+  Document uploads by surveyors and adjustors follow the same rule.
 
 ---
 
@@ -313,7 +317,7 @@ under `/api` (for example `http://localhost:3000/api/claims`).
 | POST   | `/claims/{id}/assign`                             | Bearer | Assign to a surveyor or adjustor (CASE_MANAGER, REGIONAL_MANAGER); a SUBMITTED claim becomes ASSIGNED; closed claims cannot be reassigned |
 | PATCH  | `/claims/{id}/status`                             | Bearer | Change status: role + state-machine gated; `assessed_amount` at SURVEYED, `approved_amount` at APPROVED; PAID only with an approved amount; overrides and rejections need a `note` |
 | GET    | `/claims/{id}/history`                            | Bearer | Audit trail from SUBMITTED: status changes and assignments, each with who acted (`changed_by_name`) |
-| POST   | `/claims/{id}/documents`                          | Bearer | Upload a document (CUSTOMER, SURVEYOR, ADJUSTOR)  |
+| POST   | `/claims/{id}/documents`                          | Bearer | Upload a document (CUSTOMER on their own claim; SURVEYOR, ADJUSTOR on a claim assigned to them) |
 | GET    | `/claims/{id}/documents`                          | Bearer | List documents for a claim                        |
 | GET    | `/claims/{id}/documents/{doc_id}/download`        | Bearer | Download a document                               |
 | GET    | `/health`                                         | Public | Liveness check (reports DB + Redis status)        |
@@ -395,7 +399,7 @@ Two rules that are easy to break and only fail in the production build:
 # After changing code, rebuild first: docker compose build auth-service claims-service
 cd infrastructure
 docker compose run --rm --no-deps auth-service python -m pytest -q     # 19 tests
-docker compose run --rm --no-deps claims-service python -m pytest -q   # 41 tests
+docker compose run --rm --no-deps claims-service python -m pytest -q   # 46 tests
 ```
 
 Tests use an in-memory SQLite database, a fake Redis and a stubbed auth-service call, so no other
@@ -451,7 +455,8 @@ What the POC implements:
 - JWT access and refresh tokens, signed with HS256 using a secret of at least 32 characters, with the algorithm
   pinned on decode; passwords hashed with bcrypt
 - Login rate-limited to 10 attempts per minute per client
-- Role checks on every endpoint, plus ownership checks, so customers only reach their own claims and documents
+- Role checks on every endpoint, plus ownership checks, so customers only reach their own claims and documents,
+  and surveyors and adjustors change only the claims assigned to them
 - Uploads checked by extension, size and sniffed content type, and stored under random names (no path traversal)
 - Parameterised queries throughout (SQLAlchemy); no SQL is built from user input
 - nginx security headers on the portals: `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` and a
@@ -463,7 +468,7 @@ Known gaps, on the roadmap for a production build:
 - Security headers are not repeated on static assets, and there is no TLS locally
 - PostgreSQL and Redis ports are published to the host, and Redis has no password
 - Containers run as root; `python-jose` should be replaced (CVE-2024-33663, CVE-2024-33664)
-- Surveyors and adjustors can act on any claim, not only those assigned to them
+- Staff can read every claim; there is no regional scoping yet
 
 ---
 

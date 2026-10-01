@@ -147,8 +147,9 @@ def _act_as(user):
     app.dependency_overrides[get_current_user] = override
 
 
-async def _set_status(db_session, claim, status: ClaimStatus):
+async def _set_status(db_session, claim, status: ClaimStatus, assigned_to=None):
     claim.status = status
+    claim.assigned_to = assigned_to
     await db_session.flush()
 
 
@@ -165,7 +166,7 @@ async def test_submit_claim_starts_audit_trail(client, customer_user):
 
 @pytest.mark.asyncio
 async def test_survey_requires_assessed_amount(client, db_session, sample_claim, surveyor_user):
-    await _set_status(db_session, sample_claim, ClaimStatus.UNDER_SURVEY)
+    await _set_status(db_session, sample_claim, ClaimStatus.UNDER_SURVEY, surveyor_user.id)
     _act_as(surveyor_user)
     url = f"/claims/{sample_claim.id}/status"
 
@@ -179,7 +180,7 @@ async def test_survey_requires_assessed_amount(client, db_session, sample_claim,
 
 @pytest.mark.asyncio
 async def test_approval_cannot_exceed_claimed_amount(client, db_session, sample_claim, adjustor_user):
-    await _set_status(db_session, sample_claim, ClaimStatus.UNDER_ADJUDICATION)
+    await _set_status(db_session, sample_claim, ClaimStatus.UNDER_ADJUDICATION, adjustor_user.id)
     _act_as(adjustor_user)
     url = f"/claims/{sample_claim.id}/status"
 
@@ -194,7 +195,7 @@ async def test_approval_cannot_exceed_claimed_amount(client, db_session, sample_
 
 @pytest.mark.asyncio
 async def test_amounts_only_accepted_with_matching_status(client, db_session, sample_claim, adjustor_user):
-    await _set_status(db_session, sample_claim, ClaimStatus.UNDER_ADJUDICATION)
+    await _set_status(db_session, sample_claim, ClaimStatus.UNDER_ADJUDICATION, adjustor_user.id)
     _act_as(adjustor_user)
     resp = await client.patch(
         f"/claims/{sample_claim.id}/status",
@@ -314,7 +315,7 @@ async def test_submit_claim_trims_text_fields(client):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("amount", ["0.004", "99999999999.99", "-5"])
 async def test_status_amounts_must_fit_the_money_column(client, db_session, sample_claim, surveyor_user, amount):
-    await _set_status(db_session, sample_claim, ClaimStatus.UNDER_SURVEY)
+    await _set_status(db_session, sample_claim, ClaimStatus.UNDER_SURVEY, surveyor_user.id)
     _act_as(surveyor_user)
     resp = await client.patch(
         f"/claims/{sample_claim.id}/status",
@@ -339,7 +340,7 @@ async def test_override_to_the_current_status_is_refused(client, db_session, sam
 
 @pytest.mark.asyncio
 async def test_rejection_requires_a_reason(client, db_session, sample_claim, adjustor_user):
-    await _set_status(db_session, sample_claim, ClaimStatus.UNDER_ADJUDICATION)
+    await _set_status(db_session, sample_claim, ClaimStatus.UNDER_ADJUDICATION, adjustor_user.id)
     _act_as(adjustor_user)
     url = f"/claims/{sample_claim.id}/status"
 
@@ -369,3 +370,69 @@ async def test_non_ascii_bearer_token_is_rejected_with_401():
     with pytest.raises(HTTPException) as exc:
         await get_current_user(request=None, credentials=credentials)
     assert exc.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_unassigned_surveyor_gets_403(client, db_session, sample_claim, surveyor_user):
+    # Assigned to another surveyor (Carol), so this one may read the claim but not work it.
+    await _set_status(db_session, sample_claim, ClaimStatus.ASSIGNED, uuid.UUID(SURVEYOR_ID))
+    _act_as(surveyor_user)
+    url = f"/claims/{sample_claim.id}/status"
+
+    resp = await client.patch(url, json={"status": "UNDER_SURVEY"})
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "This claim is not assigned to you"
+    assert (await client.get(f"/claims/{sample_claim.id}")).status_code == 200
+
+    sample_claim.assigned_to = surveyor_user.id
+    await db_session.flush()
+    assert (await client.patch(url, json={"status": "UNDER_SURVEY"})).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_survey_hands_the_claim_to_the_adjudication_queue(
+    client, db_session, sample_claim, surveyor_user, adjustor_user
+):
+    await _set_status(db_session, sample_claim, ClaimStatus.UNDER_SURVEY, surveyor_user.id)
+    url = f"/claims/{sample_claim.id}/status"
+
+    _act_as(surveyor_user)
+    surveyed = await client.patch(url, json={"status": "SURVEYED", "note": "Bumper", "assessed_amount": 8000})
+    assert surveyed.json()["assigned_to"] is None
+
+    # Any adjustor may pick a surveyed claim up, and becomes its assignee.
+    _act_as(adjustor_user)
+    picked = await client.patch(url, json={"status": "UNDER_ADJUDICATION"})
+    assert picked.status_code == 200
+    assert picked.json()["assigned_to"] == str(adjustor_user.id)
+
+    # From then on it is theirs alone.
+    _act_as(UserContext(id=uuid.uuid4(), email="other-adjustor@test.com", role="ADJUSTOR"))
+    other = await client.patch(url, json={"status": "APPROVED", "approved_amount": 8000})
+    assert other.status_code == 403
+
+    _act_as(adjustor_user)
+    assert (await client.patch(url, json={"status": "APPROVED", "approved_amount": 8000})).status_code == 200
+    assert (await client.patch(url, json={"status": "PAID"})).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_a_surveyed_claim_given_to_one_adjustor_is_not_open_to_others(
+    client, db_session, sample_claim, adjustor_user
+):
+    await _set_status(db_session, sample_claim, ClaimStatus.SURVEYED, uuid.UUID(ADJUSTOR_ID))
+    _act_as(adjustor_user)
+    resp = await client.patch(f"/claims/{sample_claim.id}/status", json={"status": "UNDER_ADJUDICATION"})
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_assigning_a_claim_in_the_adjudication_queue_is_not_a_reassignment(
+    client, db_session, sample_claim, case_manager_user
+):
+    await _set_status(db_session, sample_claim, ClaimStatus.SURVEYED)
+    _act_as(case_manager_user)
+    resp = await client.post(f"/claims/{sample_claim.id}/assign", json={"assigned_to": ADJUSTOR_ID})
+    assert resp.status_code == 200
+    history = (await client.get(f"/claims/{sample_claim.id}/history")).json()
+    assert history[-1]["note"] == "Assigned to Bob Adjuster"

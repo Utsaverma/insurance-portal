@@ -30,7 +30,7 @@ _BEFORE_SURVEY = {ClaimStatus.SUBMITTED, ClaimStatus.ASSIGNED, ClaimStatus.UNDER
 _APPROVAL_STANDS = {ClaimStatus.APPROVED, ClaimStatus.PAID}
 # Closed claims keep their last assignment; a rejected claim is reopened by a case-manager override first.
 _CLOSED = {ClaimStatus.PAID, ClaimStatus.REJECTED}
-# A claim is assigned to the people who work it.
+# A claim is assigned to the people who work it, and they act only on the claims assigned to them.
 ASSIGNABLE_ROLES = {"SURVEYOR", "ADJUSTOR"}
 
 
@@ -50,6 +50,35 @@ def validate_transition(current: ClaimStatus, requested: ClaimStatus, role: str)
 def is_override(current: ClaimStatus, requested: ClaimStatus, role: str) -> bool:
     """A case manager moving a claim anywhere other than along their own step of the workflow."""
     return role == "CASE_MANAGER" and requested not in TRANSITIONS.get(current, {}).get(role, set())
+
+
+def is_pickup(claim: Claim, requested: ClaimStatus, user: UserContext) -> bool:
+    """An adjustor taking a surveyed claim from the adjudication queue: completing the survey leaves the
+    claim unassigned, and whoever begins adjudication becomes its assignee."""
+    return (
+        user.role == "ADJUSTOR"
+        and claim.status == ClaimStatus.SURVEYED
+        and requested == ClaimStatus.UNDER_ADJUDICATION
+        and claim.assigned_to is None
+    )
+
+
+def ensure_assignee(user: UserContext, claim: Claim, requested: ClaimStatus | None = None) -> None:
+    """Surveyors and adjustors act only on claims assigned to them; the one exception is the queue pickup."""
+    if user.role not in ASSIGNABLE_ROLES or claim.assigned_to == user.id:
+        return
+    if requested is not None and is_pickup(claim, requested, user):
+        return
+    raise Forbidden("This claim is not assigned to you")
+
+
+def _assignee_after(claim: Claim, req: StatusUpdateRequest, user: UserContext) -> uuid.UUID | None:
+    # The survey is the surveyor's last step: the claim waits, unassigned, for an adjustor to pick it up.
+    if req.status == ClaimStatus.SURVEYED:
+        return None
+    if is_pickup(claim, req.status, user):
+        return user.id
+    return claim.assigned_to
 
 
 def _validate_amounts(claim: Claim, req: StatusUpdateRequest) -> None:
@@ -136,6 +165,7 @@ async def update_status(
         # Not a transition at all; without this a case-manager "override" could rewrite an approved amount.
         raise InvalidTransition(f"Invalid state transition: the claim is already {claim.status}")
     validate_transition(claim.status, req.status, user.role)
+    ensure_assignee(user, claim, req.status)
 
     override = is_override(claim.status, req.status, user.role)
     reason = (req.note or "").strip()
@@ -149,7 +179,14 @@ async def update_status(
     assessed, approved = _amounts_after(claim, req)
     note = f"Case manager override: {reason}" if override else req.note
     updated = await repo.update_status(
-        claim, req.status, user.id, note, assessed, approved, changed_by_name=_actor(user)
+        claim,
+        req.status,
+        user.id,
+        note,
+        assessed,
+        approved,
+        changed_by_name=_actor(user),
+        assigned_to=_assignee_after(claim, req, user),
     )
     await send_notification(
         claim_id=claim_id,
@@ -184,7 +221,7 @@ async def assign_claim(
         if user.role != "CASE_MANAGER":
             raise Forbidden("Only case managers can assign a submitted claim")
         new_status = ClaimStatus.ASSIGNED
-    verb = "Assigned" if new_status is not None else "Reassigned"
+    verb = "Assigned" if new_status is not None or claim.assigned_to is None else "Reassigned"
     note = f"{verb} to {assignee.name}"
     updated = await repo.assign(claim, req.assigned_to, user.id, new_status, note, changed_by_name=_actor(user))
     if new_status is not None:

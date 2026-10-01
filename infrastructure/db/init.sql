@@ -101,6 +101,8 @@ ON CONFLICT (email) DO NOTHING;
 -- ─── SEED CLAIMS ───────────────────────────────────────────────────────────
 -- Six auto claims, one per key status. Every history step is taken by the role the workflow allows, and
 -- timestamps are backdated so the reports show realistic processing times. Runs once, on an empty database.
+-- A claim belongs to whoever is working it: the surveyor until the survey is done, then the adjustor who
+-- picked it up from the adjudication queue.
 
 DO $$
 DECLARE
@@ -139,7 +141,7 @@ BEGIN
   -- 3. UNDER_ADJUDICATION: survey complete, the adjustor is checking cover.
   INSERT INTO claims (claim_number, customer_id, policy_number, status, claimed_amount, assessed_amount, assigned_to,
                       incident_date, incident_description, created_at, updated_at)
-  VALUES ('CLM-20260910-00003', customer, 'AUTO-100245', 'UNDER_ADJUDICATION', 8900.00, 7850.00, surveyor, '2026-09-08',
+  VALUES ('CLM-20260910-00003', customer, 'AUTO-100245', 'UNDER_ADJUDICATION', 8900.00, 7850.00, adjustor, '2026-09-08',
           'Hail storm in Dallas, TX. Dents across the roof and hood; windshield cracked.',
           '2026-09-10 11:20+00', '2026-09-18 15:40+00')
   RETURNING id INTO c;
@@ -153,7 +155,7 @@ BEGIN
   -- 4. APPROVED: approved after the deductible, awaiting payment.
   INSERT INTO claims (claim_number, customer_id, policy_number, status, claimed_amount, assessed_amount, approved_amount,
                       assigned_to, incident_date, incident_description, created_at, updated_at)
-  VALUES ('CLM-20260818-00004', customer, 'AUTO-100245', 'APPROVED', 6400.00, 6100.00, 5850.00, surveyor, '2026-08-16',
+  VALUES ('CLM-20260818-00004', customer, 'AUTO-100245', 'APPROVED', 6400.00, 6100.00, 5850.00, adjustor, '2026-08-16',
           'Struck a deer on a rural highway near Albany, NY. Front grille, hood and radiator damaged; vehicle towed.',
           '2026-08-18 08:45+00', '2026-09-01 12:10+00')
   RETURNING id INTO c;
@@ -168,7 +170,7 @@ BEGIN
   -- 5. REJECTED: an excluded peril; used to demonstrate a case-manager override.
   INSERT INTO claims (claim_number, customer_id, policy_number, status, claimed_amount, assessed_amount, assigned_to,
                       incident_date, incident_description, created_at, updated_at)
-  VALUES ('CLM-20260725-00005', customer, 'AUTO-100245', 'REJECTED', 12000.00, 9800.00, surveyor, '2026-07-22',
+  VALUES ('CLM-20260725-00005', customer, 'AUTO-100245', 'REJECTED', 12000.00, 9800.00, adjustor, '2026-07-22',
           'Engine failed after driving through flood water in Houston, TX. Vehicle towed to a partner workshop.',
           '2026-07-25 10:00+00', '2026-08-11 16:45+00')
   RETURNING id INTO c;
@@ -183,7 +185,7 @@ BEGIN
   -- 6. PAID: settled electronically with the partner workshop.
   INSERT INTO claims (claim_number, customer_id, policy_number, status, claimed_amount, assessed_amount, approved_amount,
                       assigned_to, incident_date, incident_description, created_at, updated_at)
-  VALUES ('CLM-20260706-00006', customer, 'AUTO-100245', 'PAID', 950.00, 900.00, 900.00, surveyor, '2026-07-04',
+  VALUES ('CLM-20260706-00006', customer, 'AUTO-100245', 'PAID', 950.00, 900.00, 900.00, adjustor, '2026-07-04',
           'Windshield cracked by road debris on I-80 near Reno, NV.',
           '2026-07-06 16:30+00', '2026-07-20 11:00+00')
   RETURNING id INTO c;

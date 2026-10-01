@@ -132,3 +132,27 @@ async def test_unauthorized_download_forbidden(client, db_session, sample_claim,
     fake_doc_id = uuid.uuid4()
     resp = await client.get(f"/claims/{sample_claim.id}/documents/{fake_doc_id}/download")
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_staff_upload_only_to_claims_assigned_to_them(client, db_session, sample_claim, surveyor_user, tmp_path, monkeypatch):
+    import config
+    from main import app
+    from dependencies.auth import get_current_user
+
+    monkeypatch.setattr(config.settings, "upload_dir", str(tmp_path))
+
+    async def override_surveyor():
+        return surveyor_user
+
+    app.dependency_overrides[get_current_user] = override_surveyor
+    url = f"/claims/{sample_claim.id}/documents"
+
+    def report():
+        return {"file": ("survey-report.pdf", io.BytesIO(_make_pdf_bytes()), "application/pdf")}
+
+    assert (await client.post(url, files=report())).status_code == 403
+
+    sample_claim.assigned_to = surveyor_user.id
+    await db_session.flush()
+    assert (await client.post(url, files=report())).status_code == 201
