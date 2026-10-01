@@ -75,6 +75,9 @@ def ensure_assignee(user: UserContext, claim: Claim, requested: ClaimStatus) -> 
 
 
 def can_upload(user: UserContext, claim: Claim) -> bool:
+    # A paid claim is final, its documents included. A rejected one still takes evidence for a reopening.
+    if claim.status == ClaimStatus.PAID:
+        return False
     if user.role == "CUSTOMER":
         return claim.customer_id == user.id
     return user.role in ASSIGNABLE_ROLES and claim.assigned_to == user.id

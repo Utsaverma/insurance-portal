@@ -156,3 +156,28 @@ async def test_staff_upload_only_to_claims_assigned_to_them(client, db_session, 
     sample_claim.assigned_to = surveyor_user.id
     await db_session.flush()
     assert (await client.post(url, files=report())).status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_customer_adds_evidence_until_the_claim_is_paid(client, db_session, sample_claim, tmp_path, monkeypatch):
+    import config
+    from models.db_models import ClaimStatus
+
+    monkeypatch.setattr(config.settings, "upload_dir", str(tmp_path))
+    url = f"/claims/{sample_claim.id}/documents"
+
+    def evidence():
+        return {"file": ("repair-estimate.pdf", io.BytesIO(_make_pdf_bytes()), "application/pdf")}
+
+    # After submission, and even after a rejection (evidence for a reopening).
+    sample_claim.status = ClaimStatus.REJECTED
+    await db_session.flush()
+    assert (await client.post(url, files=evidence())).status_code == 201
+    assert (await client.get(f"/claims/{sample_claim.id}")).json()["allowed_actions"]["upload"] is True
+
+    sample_claim.status = ClaimStatus.PAID
+    await db_session.flush()
+    resp = await client.post(url, files=evidence())
+    assert resp.status_code == 400
+    assert "paid claim is final" in resp.json()["detail"]
+    assert (await client.get(f"/claims/{sample_claim.id}")).json()["allowed_actions"]["upload"] is False

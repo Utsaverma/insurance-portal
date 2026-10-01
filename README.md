@@ -41,14 +41,17 @@ the four core eClaims capabilities via a single `docker compose up`. See
 **Customer portal**
 - Log in (JWT-based). Accounts come from the seed or from `POST /auth/register`; there is no sign-up page yet
 - Submit a claim (policy number, incident date, description, claimed amount in USD)
-- Attach a supporting document when submitting (PDF / JPEG / PNG, drag-and-drop, ≤ 10 MB, MIME-validated)
+- Attach a supporting document when submitting (PDF / JPEG / PNG, drag-and-drop, ≤ 10 MB, MIME-validated), and add
+  more evidence from the claim page later, until the claim is paid
 - Track claims on a dashboard, including the approved amount once a claim is approved
 - Follow each claim's status timeline from submission onwards, and download its documents
 
 **Internal staff portal**
 - Claims queue, newest first, with a status filter and sorting by incident date
-- Actions gated by role and the claim's current status: assign or reassign to a surveyor or adjustor, complete the
-  survey with an assessed amount, approve with an amount or reject, mark paid
+- Actions gated by role, the claim's current status and its assignee, as the server reports them
+  (`allowed_actions`): assign or reassign to a surveyor or adjustor, complete the survey with an assessed amount,
+  approve with an amount or reject, mark paid
+- The assigned surveyor or adjustor uploads a survey report, photos or estimates from the claim page
 - Case-manager override: an explicit form with a mandatory reason and a confirmation step
 - Claim detail with the claimed, assessed and approved amounts, document downloads, and the audit trail
 - Reports for case and regional managers, computed in the browser from the latest 1,000 claims: claims per
@@ -196,7 +199,8 @@ Once all six containers report healthy:
 1. **Customer portal**: log in as `customer@test.com` / `Test1234!` and submit a claim with a photo or police report
    (PDF, JPEG or PNG, up to 10 MB).
 2. **Internal portal**: log in as `casemanager@test.com` and assign the claim to Carol Surveyor.
-3. Log in as `surveyor@test.com`, start the survey and complete it with an assessed amount.
+3. Log in as `surveyor@test.com`, start the survey, upload a survey report from the claim page, and complete the
+   survey with an assessed amount.
 4. Log in as `adjuster@test.com`, begin adjudication and approve an amount (never above the claimed amount).
 5. Back in the **customer portal**: the claim shows **APPROVED** with the approved amount and its full timeline.
 6. Log in as `auditor@test.com` and open any claim to see its audit trail.
@@ -317,7 +321,7 @@ under `/api` (for example `http://localhost:3000/api/claims`).
 | POST   | `/claims/{id}/assign`                             | Bearer | Assign to a surveyor or adjustor (CASE_MANAGER, REGIONAL_MANAGER); a SUBMITTED claim becomes ASSIGNED; closed claims cannot be reassigned |
 | PATCH  | `/claims/{id}/status`                             | Bearer | Change status: role + state-machine gated; `assessed_amount` at SURVEYED, `approved_amount` at APPROVED; PAID only with an approved amount; overrides and rejections need a `note` |
 | GET    | `/claims/{id}/history`                            | Bearer | Audit trail from SUBMITTED: status changes and assignments, each with who acted (`changed_by_name`) |
-| POST   | `/claims/{id}/documents`                          | Bearer | Upload a document (CUSTOMER on their own claim; SURVEYOR, ADJUSTOR on a claim assigned to them) |
+| POST   | `/claims/{id}/documents`                          | Bearer | Upload a document (CUSTOMER on their own claim; SURVEYOR, ADJUSTOR on a claim assigned to them); not once the claim is PAID |
 | GET    | `/claims/{id}/documents`                          | Bearer | List documents for a claim                        |
 | GET    | `/claims/{id}/documents/{doc_id}/download`        | Bearer | Download a document                               |
 | GET    | `/health`                                         | Public | Liveness check (reports DB + Redis status)        |
@@ -408,7 +412,7 @@ Two rules that are easy to break and only fail in the production build:
 # After changing code, rebuild first: docker compose build auth-service claims-service
 cd infrastructure
 docker compose run --rm --no-deps auth-service python -m pytest -q     # 19 tests
-docker compose run --rm --no-deps claims-service python -m pytest -q   # 50 tests
+docker compose run --rm --no-deps claims-service python -m pytest -q   # 51 tests
 ```
 
 Tests use an in-memory SQLite database, a fake Redis and a stubbed auth-service call, so no other

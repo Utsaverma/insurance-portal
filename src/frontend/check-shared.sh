@@ -39,6 +39,8 @@ SHARED_FILES=(
   src/lib/format.ts
   src/components/DocumentList.tsx
   src/components/StatusTimeline.tsx
+  src/components/FileUpload.tsx
+  src/components/AddDocument.tsx
 )
 
 # Expected to differ, with the reason:

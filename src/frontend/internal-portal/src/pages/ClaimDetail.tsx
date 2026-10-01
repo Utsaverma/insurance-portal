@@ -8,6 +8,7 @@ import { ClaimStatusBadge } from '../components/ClaimStatusBadge'
 import { StatusActionPanel } from '../components/StatusActionPanel'
 import { StatusTimeline } from '../components/StatusTimeline'
 import { ClaimDocumentViewer } from '../components/ClaimDocumentViewer'
+import { AddDocument } from '../components/AddDocument'
 import { CONTENT_WIDTH } from '../components/layout/shell'
 import { cn } from '../lib/cn'
 import { formatCurrency, formatDate } from '../lib/format'
@@ -162,6 +163,9 @@ export function ClaimDetail() {
           <div>
             <SectionHeading>Documents</SectionHeading>
             <ClaimDocumentViewer claimId={claim.id} documents={docs} />
+            {claim.allowed_actions.upload && (
+              <AddDocument claimId={claim.id} hint="(survey report, photos, estimates)" onUploaded={loadData} />
+            )}
           </div>
 
           <div>

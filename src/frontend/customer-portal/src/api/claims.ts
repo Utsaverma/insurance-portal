@@ -10,6 +10,15 @@ export type ClaimStatus =
   | 'REJECTED'
   | 'PAID'
 
+/** What the customer may do to a claim right now, computed by the server. */
+export interface AllowedActions {
+  transitions: ClaimStatus[]
+  overrides: ClaimStatus[]
+  assign: boolean
+  /** POST /claims/{id}/documents: add evidence after submission. */
+  upload: boolean
+}
+
 export interface Claim {
   id: string
   claim_number: string
@@ -24,6 +33,7 @@ export interface Claim {
   approved_amount: string | number | null
   status: ClaimStatus
   assigned_to: string | null
+  allowed_actions: AllowedActions
   created_at: string
   updated_at: string
 }
