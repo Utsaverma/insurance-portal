@@ -31,9 +31,9 @@
       "fullName": "Alice Customer",
       "portal": "customerPortal",
       "capabilities": [
-        "Submit a new claim",
+        "Submit a claim against a policy held in their name and in force on the incident date (AUTO-100245; AUTO-099120 lapsed on 2025-12-31)",
         "List and view own claims only",
-        "Upload claim documents"
+        "Upload claim documents until the claim is paid"
       ]
     },
     {
@@ -55,8 +55,9 @@
       "fullName": "Carol Surveyor",
       "portal": "internalPortal",
       "capabilities": [
-        "ASSIGNED -> UNDER_SURVEY (start survey)",
-        "UNDER_SURVEY -> SURVEYED (submit assessment)"
+        "ASSIGNED -> UNDER_SURVEY (start survey), on claims assigned to them",
+        "UNDER_SURVEY -> SURVEYED (submit assessment); the claim then waits unassigned for an adjustor",
+        "Upload a survey report to claims assigned to them"
       ]
     },
     {
@@ -66,8 +67,8 @@
       "fullName": "Bob Adjuster",
       "portal": "internalPortal",
       "capabilities": [
-        "SURVEYED -> UNDER_ADJUDICATION (begin adjudication)",
-        "UNDER_ADJUDICATION -> APPROVED or REJECTED",
+        "SURVEYED -> UNDER_ADJUDICATION (begin adjudication), which makes them the claim's assignee",
+        "UNDER_ADJUDICATION -> APPROVED (up to the claimed amount and the policy's cover less its deductible) or REJECTED",
         "APPROVED -> PAID"
       ]
     },
@@ -102,5 +103,13 @@
     "adjuster@test.com - begin adjudication, then approve with an amount",
     "customer@test.com - claim now shows APPROVED"
   ],
-  "registration": "Self-registrations through the customer portal always receive the CUSTOMER role."
+  "registration": "Self-registrations (POST /auth/register) always receive the CUSTOMER role and need a policy_number whose holder email is the one being registered.",
+  "registrablePolicies": [
+    {
+      "policyNumber": "AUTO-100777",
+      "holderEmail": "grace@test.com",
+      "holderName": "Grace Holder",
+      "notes": "No portal account yet: POST /auth/register with this email and policy_number creates one."
+    }
+  ]
 }

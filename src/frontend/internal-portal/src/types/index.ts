@@ -62,6 +62,11 @@ export interface Claim {
   status: ClaimStatus
   assigned_to: string | null
   assigned_staff_name?: string
+  /** The policy's terms at first notice of loss; null on claims filed before the snapshot. */
+  coverage_limit: string | number | null
+  deductible: string | number | null
+  /** The most that may be approved: the claimed amount, capped by coverage limit less deductible. */
+  approval_limit: string | number
   allowed_actions: AllowedActions
   created_at: string
   updated_at: string

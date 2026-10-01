@@ -71,7 +71,7 @@ async def test_an_assignment_emails_the_assignee(client, db_session, sample_clai
 @pytest.mark.asyncio
 async def test_the_dispatcher_delivers_each_event_once_and_records_it(client, db_session):
     claim_id = (await client.post("/claims", json={
-        "policy_number": "POL-1", "incident_date": "2026-09-01",
+        "policy_number": "POL-12345", "incident_date": "2026-09-01",
         "incident_description": "Rear bumper cracked in a car park", "claimed_amount": 1200,
     })).json()["id"]
     email, sms = RecordingSender(), RecordingSender()
@@ -95,7 +95,7 @@ async def test_a_failed_delivery_backs_off_then_is_dead_lettered(client, db_sess
     import config
 
     await client.post("/claims", json={
-        "policy_number": "POL-1", "incident_date": "2026-09-01",
+        "policy_number": "POL-12345", "incident_date": "2026-09-01",
         "incident_description": "Rear bumper cracked in a car park", "claimed_amount": 1200,
     })
     down = RecordingSender(fail_with=ConnectionRefusedError("SMTP server unreachable"))
@@ -122,7 +122,7 @@ async def test_a_failed_delivery_backs_off_then_is_dead_lettered(client, db_sess
 @pytest.mark.asyncio
 async def test_an_unknown_recipient_is_retried_not_lost(client, db_session):
     await client.post("/claims", json={
-        "policy_number": "POL-1", "incident_date": "2026-09-01",
+        "policy_number": "POL-12345", "incident_date": "2026-09-01",
         "incident_description": "Rear bumper cracked in a car park", "claimed_amount": 1200,
     })
 

@@ -55,6 +55,10 @@ class ClaimResponse(BaseModel):
     status: ClaimStatus
     assigned_to: uuid.UUID | None
     assigned_staff_name: str | None = None
+    # The policy terms at first notice of loss, and the most that may be approved under them.
+    coverage_limit: Decimal | None = None
+    deductible: Decimal | None = None
+    approval_limit: Decimal | None = None
     allowed_actions: AllowedActions = AllowedActions()
     created_at: datetime
     updated_at: datetime
@@ -150,3 +154,17 @@ class ReportSummary(BaseModel):
     # Open claims by time since submission.
     open_ageing: list[AgeingBucket]
     recently_closed: list[ClosedClaim]
+
+
+class PolicyResponse(BaseModel):
+    """A policy as the policy system reports it (services.policy_gateway.PolicySnapshot)."""
+    policy_number: str
+    holder_name: str
+    product: str
+    insured_item: str
+    effective_from: date
+    effective_to: date
+    coverage_limit: Decimal
+    deductible: Decimal
+    # Whether it covers a loss today.
+    in_force: bool

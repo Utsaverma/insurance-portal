@@ -42,8 +42,29 @@ CREATE TABLE IF NOT EXISTS claims (
   incident_description TEXT NOT NULL,
   assigned_to          UUID REFERENCES users(id),
   incident_date        DATE NOT NULL,
+  -- The policy's terms at first notice of loss; approval is capped at coverage_limit - deductible.
+  coverage_limit       NUMERIC(12,2),
+  deductible           NUMERIC(12,2),
   created_at           TIMESTAMPTZ DEFAULT NOW(),
   updated_at           TIMESTAMPTZ DEFAULT NOW()
+);
+-- Databases created before the policy snapshot: add the columns when this file is re-applied.
+ALTER TABLE claims ADD COLUMN IF NOT EXISTS coverage_limit NUMERIC(12,2);
+ALTER TABLE claims ADD COLUMN IF NOT EXISTS deductible     NUMERIC(12,2);
+
+-- The stand-in for the insurer's Policy Administration System (ST6). The services read it through their
+-- policy gateways, as they would call the real system's API: claims-service checks a claim against it, and
+-- auth-service checks a registration. A portal account holds a policy when its email is the holder's.
+CREATE TABLE IF NOT EXISTS policies (
+  policy_number  TEXT PRIMARY KEY,
+  holder_email   TEXT          NOT NULL,
+  holder_name    TEXT          NOT NULL,
+  product        TEXT          NOT NULL,
+  insured_item   TEXT          NOT NULL,
+  effective_from DATE          NOT NULL,
+  effective_to   DATE          NOT NULL CHECK (effective_to >= effective_from),
+  coverage_limit NUMERIC(12,2) NOT NULL CHECK (coverage_limit > 0),
+  deductible     NUMERIC(12,2) NOT NULL CHECK (deductible >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS claim_documents (
@@ -137,6 +158,17 @@ INSERT INTO role_permissions (role, permission) VALUES
   ('ADJUSTOR',         'claims.work'),
   ('ADJUSTOR',         'documents.upload')
 ON CONFLICT DO NOTHING;
+
+-- ─── SEED POLICIES ─────────────────────────────────────────────────────────
+-- Alice's current policy (every seeded claim is on it) and her lapsed one; and a policy whose holder, Grace,
+-- has no portal account yet, so she can register with its number.
+
+INSERT INTO policies (policy_number, holder_email, holder_name, product, insured_item,
+                      effective_from, effective_to, coverage_limit, deductible) VALUES
+  ('AUTO-100245', 'customer@test.com', 'Alice Customer', 'Personal Auto', '2023 Toyota Camry',  '2026-01-01', '2026-12-31', 25000.00, 250.00),
+  ('AUTO-099120', 'customer@test.com', 'Alice Customer', 'Personal Auto', '2016 Honda Civic',   '2025-01-01', '2025-12-31', 15000.00, 500.00),
+  ('AUTO-100777', 'grace@test.com',    'Grace Holder',   'Personal Auto', '2024 Ford Escape',   '2026-03-01', '2027-02-28', 30000.00, 500.00)
+ON CONFLICT (policy_number) DO NOTHING;
 
 -- ─── INDEXES ───────────────────────────────────────────────────────────────
 
@@ -262,3 +294,8 @@ BEGIN
   -- The seeded audit trail names its actors, as the service does for every new entry.
   UPDATE claim_status_history h SET changed_by_name = u.full_name FROM users u WHERE u.id = h.changed_by;
 END $$;
+
+-- Claims filed before the policy snapshot (the seeds above, or an older database) take their policy's terms.
+UPDATE claims c SET coverage_limit = p.coverage_limit, deductible = p.deductible
+FROM policies p
+WHERE p.policy_number = c.policy_number AND c.coverage_limit IS NULL;

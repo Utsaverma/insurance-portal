@@ -18,7 +18,13 @@ class ClaimRepository:
         )
         return result.scalar_one()
 
-    async def create(self, data, customer_id: uuid.UUID) -> Claim:
+    async def create(
+        self,
+        data,
+        customer_id: uuid.UUID,
+        coverage_limit: Optional[Decimal] = None,
+        deductible: Optional[Decimal] = None,
+    ) -> Claim:
         claim_number = await self.generate_claim_number()
         claim = Claim(
             claim_number=claim_number,
@@ -27,6 +33,8 @@ class ClaimRepository:
             incident_date=data.incident_date,
             incident_description=data.incident_description,
             claimed_amount=data.claimed_amount,
+            coverage_limit=coverage_limit,
+            deductible=deductible,
             status=ClaimStatus.SUBMITTED,
         )
         self.db.add(claim)

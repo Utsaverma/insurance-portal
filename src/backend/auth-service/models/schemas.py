@@ -22,6 +22,16 @@ class UserRegisterRequest(BaseModel):
     email: EmailStr
     password: str
     full_name: str | None = Field(default=None, max_length=255)
+    # Customers register as policyholders: the insurer must hold this email for the policy.
+    policy_number: str = Field(min_length=1, max_length=50)
+
+    @field_validator("policy_number")
+    @classmethod
+    def strip_policy_number(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("policy_number cannot be blank")
+        return v
 
     @field_validator("email")
     @classmethod

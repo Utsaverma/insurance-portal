@@ -17,6 +17,7 @@ from models.schemas import (
     UserContext,
 )
 from services import claims_service
+from services.policy_gateway import TablePolicyGateway
 from services.user_directory import SKIP_ROLES, Directory, get_staff_directory
 from services.workflow_policy import ASSIGN, REASSIGN, SUBMIT, WorkflowPolicy
 
@@ -28,6 +29,7 @@ def _to_response(
 ) -> ClaimResponse:
     resp = ClaimResponse.model_validate(claim)
     resp.allowed_actions = claims_service.allowed_actions(claim, user, workflow)
+    resp.approval_limit = claims_service.approval_limit(claim)
     assignee = directory.get(str(claim.assigned_to)) if directory and claim.assigned_to is not None else None
     if assignee is not None:
         resp.assigned_staff_name = assignee.name
@@ -49,7 +51,7 @@ async def submit_claim(
     db: AsyncSession = Depends(get_db),
     workflow: WorkflowPolicy = Depends(get_workflow),
 ):
-    claim = await claims_service.submit_claim(body, user, db)
+    claim = await claims_service.submit_claim(body, user, db, TablePolicyGateway(db))
     return _to_response(claim, user, workflow)
 
 

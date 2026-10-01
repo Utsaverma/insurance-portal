@@ -13,6 +13,7 @@ from models.schemas import AllowedActions, AssignRequest, ClaimCreate, StaffMemb
 from repositories.claim_repository import ClaimRepository
 from services.errors import BusinessRuleViolation, Forbidden, InvalidTransition, NotFound
 from services.notification_service import notify
+from services.policy_gateway import PolicyGateway
 from services.workflow_policy import ASSIGN, OVERRIDE, REASSIGN, UPLOAD, WORK, WorkflowPolicy
 
 # Who may take which step, and who holds which permission, is the workflow policy (services.workflow_policy),
@@ -132,6 +133,14 @@ def _assignee_after(
     return claim.assigned_to
 
 
+def approval_limit(claim: Claim) -> Decimal:
+    """The most an adjustor may approve: the claimed amount, capped by the policy's coverage limit less its
+    deductible, as the terms stood at first notice of loss. Claims filed before the snapshot have no cap."""
+    if claim.coverage_limit is None or claim.deductible is None:
+        return claim.claimed_amount
+    return min(claim.claimed_amount, claim.coverage_limit - claim.deductible)
+
+
 def _validate_amounts(claim: Claim, req: StatusUpdateRequest) -> None:
     if req.assessed_amount is not None and req.status != ClaimStatus.SURVEYED:
         raise BusinessRuleViolation("An assessed amount can only be set when the survey is completed (SURVEYED)")
@@ -145,6 +154,11 @@ def _validate_amounts(claim: Claim, req: StatusUpdateRequest) -> None:
         if req.approved_amount > claim.claimed_amount:
             raise BusinessRuleViolation(
                 f"The approved amount cannot exceed the claimed amount ({claim.claimed_amount})"
+            )
+        if req.approved_amount > approval_limit(claim):
+            raise BusinessRuleViolation(
+                f"The approved amount cannot exceed the policy's coverage limit less its deductible "
+                f"({approval_limit(claim)})"
             )
     # Payment settles the approved amount, so there must be one: PAID is reachable only from APPROVED.
     if req.status == ClaimStatus.PAID and claim.approved_amount is None:
@@ -175,9 +189,19 @@ async def get_accessible_claim(claim_id: uuid.UUID, user: UserContext, db: Async
     return claim
 
 
-async def submit_claim(body: ClaimCreate, user: UserContext, db: AsyncSession) -> Claim:
+async def submit_claim(body: ClaimCreate, user: UserContext, db: AsyncSession, policies: PolicyGateway) -> Claim:
+    policy = await policies.get(body.policy_number)
+    # One message for "no such policy" and "someone else's": a customer cannot probe for other people's policies.
+    if policy is None or not policy.is_held_by(user.email):
+        raise BusinessRuleViolation(f"No policy {body.policy_number} is held in your name")
+    if not policy.in_force_on(body.incident_date):
+        raise BusinessRuleViolation(
+            f"Policy {policy.policy_number} was not in force on {body.incident_date:%b %d, %Y} "
+            f"(it runs from {policy.effective_from:%b %d, %Y} to {policy.effective_to:%b %d, %Y})"
+        )
     repo = ClaimRepository(db)
-    claim = await repo.create(body, user.id)
+    # The policy's terms are copied onto the claim: it is settled on the cover in force when the loss happened.
+    claim = await repo.create(body, user.id, coverage_limit=policy.coverage_limit, deductible=policy.deductible)
     # First notice of loss starts the audit trail.
     await repo.add_history(claim.id, None, ClaimStatus.SUBMITTED, user.id, "Claim submitted", _actor(user))
     await notify(

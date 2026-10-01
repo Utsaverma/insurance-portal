@@ -39,8 +39,10 @@ the four core eClaims capabilities via a single `docker compose up`. See
 ## Features
 
 **Customer portal**
-- Log in (JWT-based). Accounts come from the seed or from `POST /auth/register`; there is no sign-up page yet
-- Submit a claim (policy number, incident date, description, claimed amount in USD)
+- Log in (JWT-based). Accounts come from the seed or from `POST /auth/register` by policy number; there is no
+  sign-up page yet
+- Submit a claim against one of the policies held in your name (picked from a list showing each policy's period,
+  cover and deductible), with incident date, description and claimed amount in USD
 - Attach a supporting document when submitting (PDF / JPEG / PNG, drag-and-drop, ≤ 10 MB, MIME-validated), and add
   more evidence from the claim page later, until the claim is paid
 - Track claims on a dashboard, including the approved amount once a claim is approved
@@ -238,8 +240,21 @@ All seeded users share the password **`Test1234!`**.
 | auditor@test.com        | `AUDITOR`          | Eve Auditor    |
 | manager@test.com        | `REGIONAL_MANAGER` | Frank Manager  |
 
-Self-registration (`POST /auth/register`) always gives the `CUSTOMER` role. It is API-only; the portal has no
-sign-up page yet. Emails are case-insensitive: they are stored and matched in lower case.
+Self-registration (`POST /auth/register`) always gives the `CUSTOMER` role, and only to a **policyholder**. It
+needs a `policy_number` whose holder email, in the policy system, is the email being registered. It is
+API-only; the portal has no sign-up page yet. Emails are case-insensitive: they are stored and matched in lower
+case.
+
+Seeded policies (the `policies` table stands in for the insurer's Policy Administration System):
+
+| Policy        | Holder                              | Period                   | Cover / deductible   |
+|---------------|-------------------------------------|--------------------------|----------------------|
+| `AUTO-100245` | customer@test.com (Alice)           | Jan 1 – Dec 31, 2026     | $25,000 / $250       |
+| `AUTO-099120` | customer@test.com (Alice)           | Jan 1 – Dec 31, 2025 (lapsed) | $15,000 / $500  |
+| `AUTO-100777` | grace@test.com (Grace, **no account yet**) | Mar 1, 2026 – Feb 28, 2027 | $30,000 / $500 |
+
+Grace can register with her policy:
+`curl -X POST localhost:3000/api/auth/register -H 'Content-Type: application/json' -d '{"email":"grace@test.com","password":"Test1234!","full_name":"Grace Holder","policy_number":"AUTO-100777"}'`
 
 Each portal signs in only its own accounts: the customer portal accepts customers, the internal portal accepts
 staff. The other kind of account is told which portal to use.
@@ -307,8 +322,13 @@ SUBMITTED ──(CASE_MANAGER)──▶ ASSIGNED ──(SURVEYOR)──▶ UNDER
 - A **CASE_MANAGER** may override a claim to any other status, with a mandatory reason. The override is
   recorded in the status history as `Case manager override: <reason>`. A change to the status the claim
   already has is refused, so an override cannot quietly rewrite an approved amount.
+- A claim is accepted only against a policy held in the customer's name that was **in force on the incident
+  date**. Anything else is refused with `400`, and an unknown policy gets the same answer as someone else's.
+  The policy's coverage limit and deductible are copied onto the claim at submission, so it is settled on the
+  cover in force when the loss happened.
 - Completing the survey (**SURVEYED**) requires an assessed amount. Approving (**APPROVED**) requires an approved
-  amount no higher than the claimed amount. The same rules apply to overrides.
+  amount no higher than the claimed amount, nor than the policy's coverage limit less its deductible.
+  The claim's `approval_limit` field carries the lower of the two. The same rules apply to overrides.
 - Assigning a **SUBMITTED** claim moves it to **ASSIGNED**; later reassignments keep the status. Every assignment
   is recorded in the history, and closed claims (**PAID** or **REJECTED**) cannot be reassigned. A claim is
   assigned only to a **SURVEYOR** or an **ADJUSTOR**.
@@ -329,7 +349,7 @@ under `/api` (for example `http://localhost:3000/api/claims`).
 
 | Method | Path             | Auth        | Description                                              |
 |--------|------------------|-------------|----------------------------------------------------------|
-| POST   | `/auth/register` | Public      | Register a customer account (`409` if the email is taken, in any letter case) |
+| POST   | `/auth/register` | Public      | Register a customer account by `policy_number`: the email must be the policy's holder (`400` otherwise; `409` if the email is taken, in any letter case) |
 | POST   | `/auth/login`    | Public      | Log in → access + refresh tokens (rate-limited 10/min; deactivated accounts are refused) |
 | POST   | `/auth/refresh`  | Refresh JWT | Issue a new token pair (the old refresh token stays valid until it expires) |
 | GET    | `/users/me`      | Bearer      | Current user profile                                     |
@@ -341,7 +361,8 @@ under `/api` (for example `http://localhost:3000/api/claims`).
 
 | Method | Path                                              | Auth   | Description                                       |
 |--------|---------------------------------------------------|--------|---------------------------------------------------|
-| POST   | `/claims`                                         | Bearer | Submit a claim (CUSTOMER only); policy number 1–50 characters, description at least 20, incident date not in the future |
+| POST   | `/claims`                                         | Bearer | Submit a claim (CUSTOMER only) against a policy held in the caller's name and in force on the incident date; description at least 20 characters, incident date not in the future |
+| GET    | `/policies`                                       | Bearer | The policies held in the caller's name, with period, cover, deductible and `in_force` (CUSTOMER) |
 | GET    | `/claims`                                         | Bearer | List claims, newest first (customers see only their own; `limit` 1–1000) |
 | GET    | `/claims/{id}`                                    | Bearer | Claim detail (ownership-checked for customers)    |
 | POST   | `/claims/{id}/assign`                             | Bearer | Assign to a surveyor or adjustor (CASE_MANAGER, REGIONAL_MANAGER); a SUBMITTED claim becomes ASSIGNED; closed claims cannot be reassigned |
@@ -438,8 +459,8 @@ Two rules that are easy to break and only fail in the production build:
 # Run inside the service images (Python 3.12 + libmagic, exactly as in production).
 # After changing code, rebuild first: docker compose build auth-service claims-service
 cd infrastructure
-docker compose run --rm --no-deps auth-service python -m pytest -q     # 19 tests
-docker compose run --rm --no-deps claims-service python -m pytest -q   # 64 tests (the init.sql seed check is skipped in the image; CI runs it)
+docker compose run --rm --no-deps auth-service python -m pytest -q     # 20 tests
+docker compose run --rm --no-deps claims-service python -m pytest -q   # 68 tests (the init.sql seed check is skipped in the image; CI runs it)
 ```
 
 Tests use an in-memory SQLite database, a fake Redis and a stubbed auth-service call, so no other
@@ -526,6 +547,7 @@ The POC is a *minimal working* slice of the architecture in `docs/sad/solution-a
 | User/RBAC + Configuration Service | Workflow steps and role permissions in two claims-service tables, read through a 30 s Redis cache; no admin UI yet (edited with SQL) | The rules are configurable now; a configuration service and an admin UI only change where they are edited |
 | Event bus + Notification Service (SNS, SES) | Transactional outbox in PostgreSQL + `notification-dispatcher` worker; email to Mailpit over SMTP, SMS logged | Same delivery guarantees (at-least-once, retries, dead letters) without cloud providers; in the target the dispatcher publishes to the bus instead |
 | Document Service (S3 + OpenSearch) | Validated uploads on a local volume | Local, single host |
+| Policy Administration System integration behind an anti-corruption layer | A `policies` table as the policy-system stub, read through a `PolicyGateway` (claims-service) and a `PolicyRepository` (auth-service) | Connecting the real system means one new gateway implementation; nothing else changes |
 | Separate Claims and User databases (RDS PostgreSQL) | One PostgreSQL instance shared by both services | Fewer moving parts |
 | ElastiCache Redis | Redis caching the staff directory | — |
 | Reporting Service + Redshift | `GET /reports/summary` in claims-service, aggregated in SQL on the operational database | Small data volumes; the queries move to a read model or warehouse unchanged in shape |

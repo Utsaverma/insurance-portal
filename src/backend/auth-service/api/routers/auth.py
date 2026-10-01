@@ -11,6 +11,7 @@ from models.schemas import (
     UserRegisterRequest,
     UserResponse,
 )
+from repositories.policy_repository import PolicyRepository
 from repositories.user_repository import UserRepository
 from services.auth_service import (
     create_token_pair,
@@ -25,6 +26,12 @@ limiter = Limiter(key_func=get_ipaddr)
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)):
+    # Registration by policy number: only the policy's holder, under the email the insurer has on file.
+    if not await PolicyRepository(db).is_held_by(body.policy_number, body.email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Policy {body.policy_number} is not held under this email address",
+        )
     repo = UserRepository(db)
     existing = await repo.get_by_email(body.email)
     if existing:

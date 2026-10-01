@@ -307,9 +307,9 @@ async def test_submit_claim_rejects_invalid_input(client, overrides):
 
 @pytest.mark.asyncio
 async def test_submit_claim_trims_text_fields(client):
-    resp = await _post_claim(client, policy_number="  POL-777  ")
+    resp = await _post_claim(client, policy_number="  POL-12345  ")
     assert resp.status_code == 201
-    assert resp.json()["policy_number"] == "POL-777"
+    assert resp.json()["policy_number"] == "POL-12345"
 
 
 @pytest.mark.asyncio

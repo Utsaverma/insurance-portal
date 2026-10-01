@@ -43,6 +43,9 @@ class Claim(Base):
         default=ClaimStatus.SUBMITTED,
     )
     assigned_to: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # The policy's terms as they stood at first notice of loss (null on claims filed before snapshots existed).
+    coverage_limit: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    deductible: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now(), onupdate=func.now())
 
@@ -126,3 +129,19 @@ class OutboxEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class Policy(Base):
+    """The stand-in for the insurer's Policy Administration System, read through services.policy_gateway."""
+    __tablename__ = "policies"
+
+    policy_number: Mapped[str] = mapped_column(String(50), primary_key=True)
+    # Who the insurer has on file as the policyholder; a portal account owns the policy when its email matches.
+    holder_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    holder_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    product: Mapped[str] = mapped_column(String(100), nullable=False)
+    insured_item: Mapped[str] = mapped_column(String(255), nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[date] = mapped_column(Date, nullable=False)
+    coverage_limit: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    deductible: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)

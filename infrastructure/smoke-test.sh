@@ -70,8 +70,15 @@ CM=$(login casemanager@test.com)
 SURVEYOR=$(login surveyor@test.com)
 ADJUSTOR=$(login adjuster@test.com)
 SMOKE_EMAIL="smoke_$(date +%s)_$RANDOM@test.com"
-expect 201 "register a smoke-test customer" -X POST "$API/auth/register" -H 'Content-Type: application/json' \
-  -d "{\"email\":\"$SMOKE_EMAIL\",\"password\":\"Test1234!\",\"full_name\":\"Smoke Test\"}"
+# The policy system (a stub table) issues the smoke customer a policy first: $4,000 cover, $250 deductible.
+SMOKE_POLICY="SMOKE-$(date +%s)-$RANDOM"
+docker compose exec -T postgres sh -c "psql -q -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -c \"INSERT INTO policies
+  VALUES ('$SMOKE_POLICY', '$SMOKE_EMAIL', 'Smoke Test', 'Personal Auto', '2021 Smoke Sedan', '2026-01-01', '2026-12-31', 4000, 250)\"" \
+  && pass "policy $SMOKE_POLICY issued to the smoke customer" || fail "could not insert the smoke policy (are the ST6 tables there?)"
+expect 400 "nobody registers with someone else's policy" -X POST "$API/auth/register" -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$SMOKE_EMAIL\",\"password\":\"Test1234!\",\"full_name\":\"Smoke Test\",\"policy_number\":\"AUTO-100245\"}"
+expect 201 "register a smoke-test customer by their policy number" -X POST "$API/auth/register" -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$SMOKE_EMAIL\",\"password\":\"Test1234!\",\"full_name\":\"Smoke Test\",\"policy_number\":\"$SMOKE_POLICY\"}"
 expect 200 "login smoke-test customer" -X POST "$API/auth/login" -H 'Content-Type: application/json' \
   -d "{\"email\":\"$SMOKE_EMAIL\",\"password\":\"Test1234!\"}"
 CUSTOMER=$(json "d['access_token']")
@@ -81,16 +88,27 @@ expect 200 "refresh issues a new access token" -X POST "$API/auth/refresh" -H 'C
 [ "$(json "d['access_token']")" != "$CUSTOMER" ] && pass "refreshed token differs" || fail "refresh returned the same token"
 
 echo "=== Claim journey ==="
+expect 200 "the customer lists the policies held in their name" "$API/policies" -H "Authorization: Bearer $CUSTOMER"
+[ "$(json "[p['policy_number'] for p in d]")" = "['$SMOKE_POLICY']" ] && pass "only the smoke customer's own policy is listed" \
+  || fail "policies listed: $(json "[p['policy_number'] for p in d]")"
+expect 400 "a claim against someone else's policy is refused" -X POST "$API/claims" -H "Authorization: Bearer $CUSTOMER" \
+  -H 'Content-Type: application/json' \
+  -d '{"policy_number":"AUTO-100245","incident_date":"2026-09-29","incident_description":"Smoke test: this claim must not be created.","claimed_amount":100}'
+expect 400 "a claim on a policy that was not in force is refused" -X POST "$API/claims" -H "Authorization: Bearer $ALICE" \
+  -H 'Content-Type: application/json' \
+  -d '{"policy_number":"AUTO-099120","incident_date":"2026-09-29","incident_description":"Smoke test: this claim must not be created.","claimed_amount":100}'
 expect 201 "customer submits a claim" -X POST "$API/claims" -H "Authorization: Bearer $CUSTOMER" \
   -H 'Content-Type: application/json' \
-  -d '{"policy_number":"AUTO-900001","incident_date":"2026-09-29","incident_description":"Smoke test: rear bumper cracked in a car park.","claimed_amount":4200}'
+  -d "{\"policy_number\":\"$SMOKE_POLICY\",\"incident_date\":\"2026-09-29\",\"incident_description\":\"Smoke test: rear bumper cracked in a car park.\",\"claimed_amount\":4200}"
 CLAIM=$(json "d['id']")
+[ "$(json "d['approval_limit']")" = "3750.00" ] && pass "the claim carries the policy's cover: at most 3750.00 approvable" \
+  || fail "approval limit $(json "d['approval_limit']")"
 expect 422 "a claim with a blank policy number and a future incident date is refused" -X POST "$API/claims" \
   -H "Authorization: Bearer $CUSTOMER" -H 'Content-Type: application/json' \
   -d '{"policy_number":"  ","incident_date":"2999-01-01","incident_description":"Smoke test: this claim must not be created.","claimed_amount":100}'
 expect 422 "an amount the database cannot hold is refused" -X POST "$API/claims" \
   -H "Authorization: Bearer $CUSTOMER" -H 'Content-Type: application/json' \
-  -d '{"policy_number":"AUTO-900001","incident_date":"2026-09-29","incident_description":"Smoke test: this claim must not be created.","claimed_amount":99999999999.99}'
+  -d "{\"policy_number\":\"$SMOKE_POLICY\",\"incident_date\":\"2026-09-29\",\"incident_description\":\"Smoke test: this claim must not be created.\",\"claimed_amount\":99999999999.99}"
 expect 200 "history starts at SUBMITTED" "$API/claims/$CLAIM/history" -H "Authorization: Bearer $CUSTOMER"
 [ "$(json "d[0]['to_status']")" = "SUBMITTED" ] && pass "first history row is SUBMITTED" || fail "history does not start at SUBMITTED"
 
@@ -133,6 +151,8 @@ make_pdf 1024
 expect 403 "staff cannot add documents to a claim assigned to someone else" -X POST "$API/claims/$CLAIM/documents" \
   -H "Authorization: Bearer $SURVEYOR" -F "file=@$FILE;filename=late-report.pdf;type=application/pdf"
 patch_status 400 "approval above the claimed amount is refused" "$ADJUSTOR" "$CLAIM" '{"status":"APPROVED","approved_amount":5000}'
+patch_status 400 "approval above the policy's cover less its deductible is refused" "$ADJUSTOR" "$CLAIM" \
+  '{"status":"APPROVED","approved_amount":3800}'
 patch_status 200 "adjustor approves an amount" "$ADJUSTOR" "$CLAIM" '{"status":"APPROVED","approved_amount":3650}'
 expect 200 "customer reads the decision" "$API/claims/$CLAIM" -H "Authorization: Bearer $CUSTOMER"
 [ "$(json "d['status'], d['approved_amount']")" = "APPROVED 3650.00" ] && pass "customer sees APPROVED with 3650.00" \
@@ -143,7 +163,7 @@ patch_status 400 "a paid claim is final" "$CM" "$CLAIM" '{"status":"UNDER_ADJUDI
 
 expect 201 "customer submits a second claim" -X POST "$API/claims" -H "Authorization: Bearer $CUSTOMER" \
   -H 'Content-Type: application/json' \
-  -d '{"policy_number":"AUTO-900001","incident_date":"2026-09-29","incident_description":"Smoke test: duplicate report of the same incident.","claimed_amount":1200}'
+  -d "{\"policy_number\":\"$SMOKE_POLICY\",\"incident_date\":\"2026-09-29\",\"incident_description\":\"Smoke test: duplicate report of the same incident.\",\"claimed_amount\":1200}"
 SECOND=$(json "d['id']")
 patch_status 400 "an override needs a reason" "$CM" "$SECOND" '{"status":"REJECTED"}'
 patch_status 400 "no claim is paid without an approved amount" "$CM" "$SECOND" '{"status":"PAID","note":"Pay now"}'

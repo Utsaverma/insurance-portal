@@ -28,11 +28,12 @@ const staffLabel = (u: UserProfileResponse) => `${u.full_name ?? u.email} (${ASS
 
 const amountValue = (v: string | number | null) => (v == null ? '' : String(v))
 
-/** The approved amount starts at the lower of the assessed and claimed amounts. */
+/** The approved amount starts at the assessed amount, never above what the
+ *  server says may be approved (the claimed amount, capped by the policy). */
 const defaultApproved = (c: Claim) =>
-  c.assessed_amount != null && Number(c.assessed_amount) < Number(c.claimed_amount)
+  c.assessed_amount != null && Number(c.assessed_amount) < Number(c.approval_limit)
     ? String(c.assessed_amount)
-    : String(c.claimed_amount)
+    : String(c.approval_limit)
 
 /** Mirrors the server's amount rules so the panel can explain them before a
  *  round trip. Empty is not an error: the submit button just stays disabled. */
@@ -41,7 +42,9 @@ function amountError(value: string, max?: string | number): string | undefined {
   const n = Number(value)
   if (!Number.isFinite(n) || n <= 0) return 'Enter an amount greater than $0.00.'
   if (Number(n.toFixed(2)) !== n) return 'Use at most 2 decimal places.'
-  if (max !== undefined && n > Number(max)) return `Cannot exceed the claimed amount (${formatCurrency(max)}).`
+  if (max !== undefined && n > Number(max)) {
+    return `Cannot exceed ${formatCurrency(max)}: the claimed amount, capped at the policy's cover less its deductible.`
+  }
   return undefined
 }
 
@@ -141,7 +144,7 @@ export function StatusActionPanel({ claim, role, userId, onActionComplete }: Pro
     overrideTo !== '' &&
     note.trim() !== '' &&
     (overrideTo !== 'SURVEYED' || amountOk(assessedAmount)) &&
-    (overrideTo !== 'APPROVED' || amountOk(approvedAmount, claim.claimed_amount))
+    (overrideTo !== 'APPROVED' || amountOk(approvedAmount, claim.approval_limit))
 
   const doOverride = () => {
     const question = `Override ${statusLabel(claim.status)} → ${statusLabel(overrideTo)}? This is recorded in the audit trail.`
@@ -249,7 +252,7 @@ export function StatusActionPanel({ claim, role, userId, onActionComplete }: Pro
               {overrideTo === 'SURVEYED' &&
                 amountInput('Assessed Amount (USD)', assessedAmount, setAssessedAmount)}
               {overrideTo === 'APPROVED' &&
-                amountInput('Approved Amount (USD)', approvedAmount, setApprovedAmount, claim.claimed_amount)}
+                amountInput('Approved Amount (USD)', approvedAmount, setApprovedAmount, claim.approval_limit)}
               <Textarea
                 label="Reason"
                 hint="(required)"
@@ -305,7 +308,7 @@ export function StatusActionPanel({ claim, role, userId, onActionComplete }: Pro
                   'Approved Amount (USD)',
                   approvedAmount,
                   setApprovedAmount,
-                  claim.claimed_amount,
+                  claim.approval_limit,
                   '(required to approve)'
                 )}
               <Textarea
@@ -317,7 +320,7 @@ export function StatusActionPanel({ claim, role, userId, onActionComplete }: Pro
               />
               <div className="flex flex-wrap gap-2">
                 {can('APPROVED') &&
-                  btn('Approve', 'APPROVED', !amountOk(approvedAmount, claim.claimed_amount), 'success')}
+                  btn('Approve', 'APPROVED', !amountOk(approvedAmount, claim.approval_limit), 'success')}
                 {can('REJECTED') && btn('Reject', 'REJECTED', !note.trim(), 'danger')}
               </div>
             </div>
