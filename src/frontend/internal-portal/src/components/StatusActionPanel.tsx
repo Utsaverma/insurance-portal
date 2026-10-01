@@ -47,11 +47,29 @@ function amountError(value: string, max?: string | number): string | undefined {
   if (value === '') return undefined
   const n = Number(value)
   if (!Number.isFinite(n) || n <= 0) return 'Enter an amount greater than $0.00.'
+  if (Number(n.toFixed(2)) !== n) return 'Use at most 2 decimal places.'
   if (max !== undefined && n > Number(max)) return `Cannot exceed the claimed amount (${formatCurrency(max)}).`
   return undefined
 }
 
 const amountOk = (value: string, max?: string | number) => value !== '' && !amountError(value, max)
+
+/** What a surveyor or adjustor is told when the claim is not at one of their steps,
+ *  instead of a permanently disabled button with no explanation. */
+function waitingMessage(role: UserRole, status: Claim['status']): string | undefined {
+  if (status === 'PAID') return 'Paid claims are final: their status can no longer be changed.'
+  if (status === 'REJECTED') return 'This claim was rejected. A case manager can reopen it with an override.'
+  if (role === 'SURVEYOR') {
+    if (status === 'SUBMITTED') return 'Waiting for a case manager to assign this claim.'
+    if (status !== 'ASSIGNED' && status !== 'UNDER_SURVEY') return 'The survey is complete. The claim is now with the adjustor.'
+  }
+  if (role === 'ADJUSTOR') {
+    if (status === 'SUBMITTED' || status === 'ASSIGNED' || status === 'UNDER_SURVEY') {
+      return 'Waiting for the survey to be completed.'
+    }
+  }
+  return undefined
+}
 
 export function StatusActionPanel({ claim, role, onActionComplete }: Props) {
   const [note, setNote] = useState('')
@@ -140,6 +158,14 @@ export function StatusActionPanel({ claim, role, onActionComplete }: Props) {
     if (window.confirm(question)) doAction(overrideTo)
   }
 
+  // PAID is final for every role, so it gets the same confirmation step as an override.
+  const doMarkPaid = () => {
+    const question = `Mark ${claim.claim_number} as paid (${formatCurrency(claim.approved_amount)})? A paid claim is final.`
+    if (window.confirm(question)) doAction('PAID')
+  }
+
+  const waiting = waitingMessage(role, claim.status)
+
   // The panel-wide loading state is unchanged; it just renders as `loading`
   // now, so labels stay readable instead of collapsing to an ellipsis.
   const btn = (
@@ -204,7 +230,7 @@ export function StatusActionPanel({ claim, role, onActionComplete }: Props) {
                     disabled={!assignee}
                     loading={actionState === 'loading'}
                   >
-                    Assign Claim
+                    {claim.status === 'SUBMITTED' ? 'Assign Claim' : 'Reassign Claim'}
                   </Button>
                 </div>
               </div>
@@ -258,7 +284,13 @@ export function StatusActionPanel({ claim, role, onActionComplete }: Props) {
           <p className="text-sm text-fg-muted">Closed claims keep their last assignment.</p>
         )}
 
-        {role === 'REGIONAL_MANAGER' && !isClosed(claim) && (
+        {role === 'REGIONAL_MANAGER' && claim.status === 'SUBMITTED' && (
+          <p className="text-sm text-fg-muted">
+            A case manager makes the first assignment. You can reassign the claim after that.
+          </p>
+        )}
+
+        {role === 'REGIONAL_MANAGER' && !isClosed(claim) && claim.status !== 'SUBMITTED' && (
           <div className="space-y-3">
             <Select
               label="Assignee"
@@ -285,9 +317,12 @@ export function StatusActionPanel({ claim, role, onActionComplete }: Props) {
 
         {role === 'SURVEYOR' && (
           <div className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              {btn('Start Survey', 'UNDER_SURVEY', claim.status !== 'ASSIGNED')}
-            </div>
+            {waiting && <p className="text-sm text-fg-muted">{waiting}</p>}
+            {claim.status === 'ASSIGNED' && (
+              <div className="flex flex-wrap gap-2">
+                {btn('Start Survey', 'UNDER_SURVEY')}
+              </div>
+            )}
             {claim.status === 'UNDER_SURVEY' && (
               <div className="space-y-3">
                 {amountInput('Assessed Amount (USD)', assessedAmount, setAssessedAmount)}
@@ -308,9 +343,12 @@ export function StatusActionPanel({ claim, role, onActionComplete }: Props) {
 
         {role === 'ADJUSTOR' && (
           <div className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              {btn('Begin Adjudication', 'UNDER_ADJUDICATION', claim.status !== 'SURVEYED')}
-            </div>
+            {waiting && <p className="text-sm text-fg-muted">{waiting}</p>}
+            {claim.status === 'SURVEYED' && (
+              <div className="flex flex-wrap gap-2">
+                {btn('Begin Adjudication', 'UNDER_ADJUDICATION')}
+              </div>
+            )}
             {claim.status === 'UNDER_ADJUDICATION' && (
               <div className="space-y-3">
                 {amountInput(
@@ -322,6 +360,7 @@ export function StatusActionPanel({ claim, role, onActionComplete }: Props) {
                 )}
                 <Textarea
                   label="Notes"
+                  hint="(required to reject)"
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   rows={3}
@@ -337,7 +376,9 @@ export function StatusActionPanel({ claim, role, onActionComplete }: Props) {
                 {/* Was bg-yellow-500 + white text: ~1.9:1, already failing in
                     light mode. The warning token is amber-700, which clears
                     4.5:1 in both themes. Do not reintroduce the yellow. */}
-                {btn('Mark Paid', 'PAID', false, 'warning')}
+                <Button variant="warning" onClick={doMarkPaid} loading={actionState === 'loading'}>
+                  Mark Paid
+                </Button>
               </div>
             )}
           </div>

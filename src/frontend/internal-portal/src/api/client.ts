@@ -15,7 +15,11 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
+    // A 401 means the session is over, except on the login call itself: there it
+    // means "wrong password", and the login page has to stay put to say so. The
+    // hard redirect used to reload that page and wipe the form and its error.
+    const isLoginCall = String(err.config?.url ?? '').endsWith('/auth/login')
+    if (err.response?.status === 401 && !isLoginCall) {
       localStorage.removeItem('internal_token')
       window.location.href = '/login'
     }
@@ -30,10 +34,18 @@ export function apiErrorMessage(err: unknown, fallback: string): string {
   const detail = axios.isAxiosError(err) ? err.response?.data?.detail : undefined
   if (typeof detail === 'string' && detail) return detail
   if (Array.isArray(detail)) {
-    const msgs = detail.map((d) => d?.msg).filter((m): m is string => typeof m === 'string')
+    const msgs = detail
+      .map((d) => d?.msg)
+      .filter((m): m is string => typeof m === 'string')
+      .map((m) => m.replace(/^Value error, /, ''))
     if (msgs.length) return msgs.join(' ')
   }
   return fallback
+}
+
+/** The HTTP status of a failed call, or undefined if the server never answered. */
+export function apiErrorStatus(err: unknown): number | undefined {
+  return axios.isAxiosError(err) ? err.response?.status : undefined
 }
 
 export default apiClient

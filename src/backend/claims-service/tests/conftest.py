@@ -16,6 +16,17 @@ from models.db_models import Base, ClaimStatus
 from models.schemas import UserContext
 
 TEST_ENGINE = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+
+# What the stubbed auth-service answers for GET /users/all. The ids carry hex letters on purpose:
+# SQLite stores an all-digit UUID as a number and cannot read it back.
+SURVEYOR_ID = "aaaaaaaa-1111-4111-8111-111111111111"
+ADJUSTOR_ID = "bbbbbbbb-2222-4222-8222-222222222222"
+AUDITOR_ID = "cccccccc-3333-4333-8333-333333333333"
+STAFF = [
+    {"id": SURVEYOR_ID, "email": "carol@test.com", "full_name": "Carol Surveyor", "role": "SURVEYOR"},
+    {"id": ADJUSTOR_ID, "email": "bob@test.com", "full_name": "Bob Adjuster", "role": "ADJUSTOR"},
+    {"id": AUDITOR_ID, "email": "eve@test.com", "full_name": "Eve Auditor", "role": "AUDITOR"},
+]
 TestSession = async_sessionmaker(TEST_ENGINE, expire_on_commit=False, class_=AsyncSession)
 
 
@@ -86,7 +97,7 @@ async def client(db_session, mock_redis, customer_user, monkeypatch):
 
     # Staff names come from auth-service; answer that call locally so the suite needs no network.
     def auth_service_stub(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=[])
+        return httpx.Response(200, json=STAFF)
 
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[get_current_user] = override_user

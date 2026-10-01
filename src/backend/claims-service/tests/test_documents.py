@@ -41,6 +41,54 @@ async def test_upload_exe_disguised_as_pdf_returns_415(client, sample_claim, tmp
 
 
 @pytest.mark.asyncio
+async def test_upload_content_must_match_its_extension(client, sample_claim, tmp_path, monkeypatch):
+    import config
+    monkeypatch.setattr(config.settings, "upload_dir", str(tmp_path))
+
+    # A real JPEG, which is an allowed type, but not what a .pdf may contain.
+    resp = await client.post(
+        f"/claims/{sample_claim.id}/documents",
+        files={"file": ("report.pdf", io.BytesIO(_make_jpeg_bytes()), "application/pdf")},
+    )
+    assert resp.status_code == 415
+
+
+@pytest.mark.asyncio
+async def test_upload_keeps_only_the_base_file_name(client, sample_claim, tmp_path, monkeypatch):
+    import config
+    monkeypatch.setattr(config.settings, "upload_dir", str(tmp_path))
+
+    resp = await client.post(
+        f"/claims/{sample_claim.id}/documents",
+        files={"file": ("../../etc/report.pdf", io.BytesIO(_make_pdf_bytes()), "application/pdf")},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["filename"] == "report.pdf"
+
+    listed = (await client.get(f"/claims/{sample_claim.id}/documents")).json()
+    assert [d["filename"] for d in listed] == ["report.pdf"]
+    download = await client.get(listed[0]["download_url"])
+    assert download.status_code == 200
+    assert download.content == _make_pdf_bytes()
+
+
+@pytest.mark.asyncio
+async def test_download_of_a_document_whose_file_is_gone_returns_404(client, sample_claim, tmp_path, monkeypatch):
+    import config
+    monkeypatch.setattr(config.settings, "upload_dir", str(tmp_path))
+
+    doc = (await client.post(
+        f"/claims/{sample_claim.id}/documents",
+        files={"file": ("report.pdf", io.BytesIO(_make_pdf_bytes()), "application/pdf")},
+    )).json()
+    for stored in tmp_path.rglob("*.pdf"):
+        stored.unlink()
+
+    resp = await client.get(doc["download_url"])
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_upload_over_size_limit_returns_413(client, sample_claim, tmp_path, monkeypatch):
     import config
     monkeypatch.setattr(config.settings, "upload_dir", str(tmp_path))

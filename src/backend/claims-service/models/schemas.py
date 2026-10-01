@@ -1,23 +1,31 @@
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.db_models import ClaimStatus
 
+# Money as the database stores it, NUMERIC(12,2): positive, at most 10 whole digits and 2 decimals.
+# Anything else is refused as a 422 here rather than rounded or overflowing in the database.
+Money = Annotated[Decimal, Field(gt=0, max_digits=12, decimal_places=2)]
+
 
 class ClaimCreate(BaseModel):
-    policy_number: str
-    incident_date: date
-    incident_description: str
-    claimed_amount: Decimal
+    model_config = ConfigDict(str_strip_whitespace=True)
 
-    @field_validator("claimed_amount")
+    policy_number: str = Field(min_length=1, max_length=50)
+    incident_date: date
+    incident_description: str = Field(min_length=20, max_length=5000)
+    claimed_amount: Money
+
+    @field_validator("incident_date")
     @classmethod
-    def positive_amount(cls, v: Decimal) -> Decimal:
-        if v <= 0:
-            raise ValueError("claimed_amount must be greater than 0")
+    def not_in_the_future(cls, v: date) -> date:
+        # One day of slack: "today" for a customer east of UTC is already tomorrow on the server.
+        if v > datetime.now(timezone.utc).date() + timedelta(days=1):
+            raise ValueError("incident_date cannot be in the future")
         return v
 
 
@@ -47,17 +55,10 @@ class ClaimListResponse(BaseModel):
 
 class StatusUpdateRequest(BaseModel):
     status: ClaimStatus
-    note: str | None = None
+    note: str | None = Field(default=None, max_length=2000)
     # Required when moving to SURVEYED (assessed) or APPROVED (approved); rejected for any other status.
-    assessed_amount: Decimal | None = None
-    approved_amount: Decimal | None = None
-
-    @field_validator("assessed_amount", "approved_amount")
-    @classmethod
-    def positive_if_present(cls, v: Decimal | None) -> Decimal | None:
-        if v is not None and v <= 0:
-            raise ValueError("amount must be greater than 0")
-        return v
+    assessed_amount: Money | None = None
+    approved_amount: Money | None = None
 
 
 class AssignRequest(BaseModel):
@@ -95,4 +96,10 @@ class UserContext(BaseModel):
     email: str
     role: str
     full_name: str | None = None
+
+
+class StaffMember(BaseModel):
+    """A user as the staff directory knows them: display name and role."""
+    name: str
+    role: str
 

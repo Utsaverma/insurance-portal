@@ -59,7 +59,8 @@ export interface SubmitClaimPayload {
 }
 
 export const getClaims = async (): Promise<Claim[]> => {
-  const res = await apiClient.get<{ items: Claim[]; total: number }>('/claims')
+  // The API pages at 20 by default; the dashboard lists every claim the customer has.
+  const res = await apiClient.get<{ items: Claim[]; total: number }>('/claims', { params: { limit: 1000 } })
   return res.data.items
 }
 

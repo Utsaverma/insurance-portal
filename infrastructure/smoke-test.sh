@@ -61,8 +61,7 @@ for portal in "$CUSTOMER_PORTAL" "$INTERNAL_PORTAL"; do
 done
 expect 401 "wrong password is refused" -X POST "$API/auth/login" -H 'Content-Type: application/json' \
   -d '{"email":"customer@test.com","password":"wrong-password"}'
-got=$(curl -s -o /dev/null -w '%{http_code}' "$API/claims")
-[[ "$got" == 401 || "$got" == 403 ]] && pass "unauthenticated API call is refused ($got)" || fail "unauthenticated API call returned $got"
+expect 401 "unauthenticated API call is refused" "$API/claims"
 
 echo "=== Accounts ==="
 ALICE=$(login customer@test.com)
@@ -85,6 +84,12 @@ expect 201 "customer submits a claim" -X POST "$API/claims" -H "Authorization: B
   -H 'Content-Type: application/json' \
   -d '{"policy_number":"AUTO-900001","incident_date":"2026-09-29","incident_description":"Smoke test: rear bumper cracked in a car park.","claimed_amount":4200}'
 CLAIM=$(json "d['id']")
+expect 422 "a claim with a blank policy number and a future incident date is refused" -X POST "$API/claims" \
+  -H "Authorization: Bearer $CUSTOMER" -H 'Content-Type: application/json' \
+  -d '{"policy_number":"  ","incident_date":"2999-01-01","incident_description":"Smoke test: this claim must not be created.","claimed_amount":100}'
+expect 422 "an amount the database cannot hold is refused" -X POST "$API/claims" \
+  -H "Authorization: Bearer $CUSTOMER" -H 'Content-Type: application/json' \
+  -d '{"policy_number":"AUTO-900001","incident_date":"2026-09-29","incident_description":"Smoke test: this claim must not be created.","claimed_amount":99999999999.99}'
 expect 200 "history starts at SUBMITTED" "$API/claims/$CLAIM/history" -H "Authorization: Bearer $CUSTOMER"
 [ "$(json "d[0]['to_status']")" = "SUBMITTED" ] && pass "first history row is SUBMITTED" || fail "history does not start at SUBMITTED"
 
@@ -101,6 +106,11 @@ expect 403 "another customer cannot read the claim" "$API/claims/$CLAIM" -H "Aut
 
 expect 200 "case manager reads the staff directory" "$API/users/all" -H "Authorization: Bearer $CM"
 SURVEYOR_ID=$(json "[u['id'] for u in d if u['role'] == 'SURVEYOR'][0]")
+CUSTOMER_ID=$(json "[u['id'] for u in d if u['role'] == 'CUSTOMER'][0]")
+expect 400 "a claim cannot be assigned to a customer" -X POST "$API/claims/$CLAIM/assign" \
+  -H "Authorization: Bearer $CM" -H 'Content-Type: application/json' -d "{\"assigned_to\":\"$CUSTOMER_ID\"}"
+expect 400 "a claim cannot be assigned to an unknown user" -X POST "$API/claims/$CLAIM/assign" \
+  -H "Authorization: Bearer $CM" -H 'Content-Type: application/json' -d '{"assigned_to":"00000000-0000-4000-8000-000000000000"}'
 expect 200 "case manager assigns the claim to a surveyor" -X POST "$API/claims/$CLAIM/assign" \
   -H "Authorization: Bearer $CM" -H 'Content-Type: application/json' -d "{\"assigned_to\":\"$SURVEYOR_ID\"}"
 [ "$(json "d['status']")" = "ASSIGNED" ] && pass "claim is ASSIGNED" || fail "claim not ASSIGNED after assignment"
@@ -115,6 +125,7 @@ patch_status 200 "adjustor approves an amount" "$ADJUSTOR" "$CLAIM" '{"status":"
 expect 200 "customer reads the decision" "$API/claims/$CLAIM" -H "Authorization: Bearer $CUSTOMER"
 [ "$(json "d['status'], d['approved_amount']")" = "APPROVED 3650.00" ] && pass "customer sees APPROVED with 3650.00" \
   || fail "customer sees $(json "d['status'], d['approved_amount']")"
+patch_status 400 "an override to the current status is refused" "$CM" "$CLAIM" '{"status":"APPROVED","note":"Lower it","approved_amount":1}'
 patch_status 200 "adjustor marks the claim paid" "$ADJUSTOR" "$CLAIM" '{"status":"PAID"}'
 patch_status 400 "a paid claim is final" "$CM" "$CLAIM" '{"status":"UNDER_ADJUDICATION","note":"Reopen"}'
 

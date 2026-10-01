@@ -8,11 +8,26 @@ from config import settings
 from models.schemas import UserContext
 
 
+# auto_error=False: FastAPI's own "no credentials" answer is 403, but a missing token is 401, the
+# status the portals act on to send the user back to the login page.
+_bearer = HTTPBearer(auto_error=False)
+
+
+def _token_from(credentials: HTTPAuthorizationCredentials | None) -> str:
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return credentials.credentials
+
+
 async def get_current_user(
     request: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> UserContext:
-    token = credentials.credentials
+    token = _token_from(credentials)
     # A JWT is always ASCII; anything else cannot even be forwarded as a header, so refuse it as invalid.
     if not token.isascii():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
@@ -42,9 +57,9 @@ async def get_current_user(
 
 
 async def get_bearer_token(
-    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> str:
-    return credentials.credentials
+    return _token_from(credentials)
 
 
 def require_role(*roles: str):

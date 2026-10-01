@@ -2,6 +2,7 @@
 
 Access to a claim's documents follows the claim's own access rule (services.claims_service).
 """
+import re
 import uuid
 from pathlib import Path
 
@@ -16,6 +17,21 @@ from models.schemas import UserContext
 from repositories.document_repository import DocumentRepository
 from services.claims_service import get_accessible_claim
 from services.errors import FileTooLarge, NotFound, UnsupportedFile
+
+
+# What each allowed extension must actually contain.
+_MIME_BY_EXTENSION = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
+
+
+def display_name(filename: str | None) -> str:
+    """The name a document is listed and downloaded under: the client's file name without any
+    directory part or control characters. (The stored file always gets a random name.)"""
+    name = re.split(r"[\\/]", filename or "")[-1]
+    name = "".join(ch for ch in name if ch.isprintable()).strip()
+    if len(name) > 255:  # keep the extension when trimming
+        suffix = Path(name).suffix[:20]
+        name = name[: 255 - len(suffix)] + suffix
+    return name or "upload"
 
 
 async def validate_and_store(
@@ -34,6 +50,8 @@ async def validate_and_store(
     mime = magic.from_buffer(contents, mime=True)
     if mime not in settings.allowed_mimes:
         raise UnsupportedFile("File content does not match allowed types")
+    if _MIME_BY_EXTENSION.get(suffix, mime) != mime:
+        raise UnsupportedFile("File content does not match its extension")
 
     dest_dir = Path(settings.upload_dir) / str(claim_id)
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -53,7 +71,7 @@ async def upload_document(
     stored_path, mime_type, size = await validate_and_store(file, claim_id)
     return await DocumentRepository(db).create(
         claim_id=claim_id,
-        filename=file.filename or "upload",
+        filename=display_name(file.filename),
         stored_path=stored_path,
         mime_type=mime_type,
         file_size_bytes=size,
@@ -73,4 +91,7 @@ async def get_document(
     doc = await DocumentRepository(db).get_by_id(doc_id, claim_id)
     if doc is None:
         raise NotFound("Document not found")
+    if not Path(doc.stored_path).is_file():
+        # The record outlived its file (for example the uploads volume was reset).
+        raise NotFound("Document file is no longer available")
     return doc

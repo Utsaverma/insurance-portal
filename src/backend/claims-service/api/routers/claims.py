@@ -16,23 +16,24 @@ from models.schemas import (
     UserContext,
 )
 from services import claims_service
-from services.user_directory import SKIP_ROLES, get_staff_directory
+from services.user_directory import SKIP_ROLES, Directory, get_staff_directory
 
 router = APIRouter(prefix="/claims", tags=["claims"])
 
 
-def _to_response(claim: Claim, directory: dict[str, str]) -> ClaimResponse:
+def _to_response(claim: Claim, directory: Directory) -> ClaimResponse:
     resp = ClaimResponse.model_validate(claim)
-    if claim.assigned_to is not None:
-        resp.assigned_staff_name = directory.get(str(claim.assigned_to))
+    assignee = directory.get(str(claim.assigned_to)) if claim.assigned_to is not None else None
+    if assignee is not None:
+        resp.assigned_staff_name = assignee.name
     return resp
 
 
-async def _staff_directory(request: Request, user: UserContext, token: str) -> dict[str, str]:
+async def _staff_directory(request: Request, user: UserContext, token: str, refresh: bool = False) -> Directory:
     if user.role in SKIP_ROLES:
         return {}
     return await get_staff_directory(
-        request.app.state.http_client, request.app.state.redis, token, request.state.request_id
+        request.app.state.http_client, request.app.state.redis, token, request.state.request_id, refresh=refresh
     )
 
 
@@ -93,10 +94,14 @@ async def assign_claim(
     token: str = Depends(get_bearer_token),
     db: AsyncSession = Depends(get_db),
 ):
-    # The audit trail records who the claim went to by name, not by internal id.
+    # The directory says who the assignee is: the service checks their role, and the audit trail
+    # records them by name, not by internal id.
     directory = await _staff_directory(request, user, token)
+    if str(body.assigned_to) not in directory:
+        # The cached directory may predate this user, so look once more before refusing.
+        directory = await _staff_directory(request, user, token, refresh=True)
     claim = await claims_service.assign_claim(
-        claim_id, body, user, db, assignee_name=directory.get(str(body.assigned_to))
+        claim_id, body, user, db, assignee=directory.get(str(body.assigned_to))
     )
     return _to_response(claim, directory)
 

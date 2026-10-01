@@ -2,10 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { FileText, Plus } from 'lucide-react'
 import { getClaims, type Claim } from '../api/claims'
+import { apiErrorMessage } from '../api/client'
 import { ClaimStatusBadge } from '../components/ClaimStatusBadge'
 import { CONTENT_WIDTH } from '../components/layout/shell'
 import { formatCurrency, formatDate } from '../lib/format'
 import {
+  Alert,
   Button,
   Card,
   EmptyState,
@@ -21,9 +23,14 @@ export function Dashboard() {
   const navigate = useNavigate()
   const [claims, setClaims] = useState<Claim[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    getClaims().then(setClaims).finally(() => setLoading(false))
+    getClaims()
+      .then(setClaims)
+      // Without this a failed load rendered as "You have no claims yet."
+      .catch((e) => setError(apiErrorMessage(e, 'Could not load your claims. Please try again.')))
+      .finally(() => setLoading(false))
   }, [])
 
   const stats = useMemo(() => {
@@ -49,6 +56,8 @@ export function Dashboard() {
 
       {loading && <LoadingBlock />}
 
+      {error && <Alert tone="danger">{error}</Alert>}
+
       {!loading && claims.length > 0 && (
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <StatCard label="Total claims" value={claims.length} size="lg" numeric />
@@ -63,7 +72,7 @@ export function Dashboard() {
         </div>
       )}
 
-      {!loading && claims.length === 0 && (
+      {!loading && !error && claims.length === 0 && (
         <EmptyState
           icon={<FileText aria-hidden className="h-8 w-8" />}
           title="You have no claims yet."

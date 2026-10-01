@@ -3,12 +3,13 @@ import { useParams } from 'react-router-dom'
 import { FileQuestion } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { getClaim, getClaimHistory, listDocuments } from '../api/claims'
-import { apiErrorMessage } from '../api/client'
+import { apiErrorMessage, apiErrorStatus } from '../api/client'
 import { ClaimStatusBadge } from '../components/ClaimStatusBadge'
 import { StatusActionPanel } from '../components/StatusActionPanel'
 import { StatusTimeline } from '../components/StatusTimeline'
 import { ClaimDocumentViewer } from '../components/ClaimDocumentViewer'
 import { CONTENT_WIDTH } from '../components/layout/shell'
+import { cn } from '../lib/cn'
 import { formatCurrency, formatDate } from '../lib/format'
 import {
   Alert,
@@ -44,7 +45,9 @@ export function ClaimDetail() {
       setHistory(h)
       setError('')
     } catch (e) {
-      setError(apiErrorMessage(e, 'Could not load this claim. Please try again.'))
+      // An unknown or malformed claim id is the "not found" state below, not an error banner.
+      const status = apiErrorStatus(e)
+      setError(status === 404 || status === 422 ? '' : apiErrorMessage(e, 'Could not load this claim. Please try again.'))
     } finally {
       setLoading(false)
     }
@@ -77,6 +80,9 @@ export function ClaimDetail() {
     )
   }
 
+  // Read-only for auditors: StatusActionPanel renders nothing for them.
+  const hasActions = currentUser != null && currentUser.role !== 'AUDITOR'
+
   return (
     <PageContainer width={CONTENT_WIDTH}>
       <PageHeader
@@ -103,17 +109,18 @@ export function ClaimDetail() {
             action was previously three screens below the stat tiles, the
             description card and the document list.
             top-20 (5rem) must track the header: h-16 (4rem) + 1rem of air. */}
-        <div className="order-1 lg:order-2 lg:sticky lg:top-20 lg:self-start">
-          {currentUser && (
+        {hasActions && currentUser && (
+          <div className="order-1 lg:order-2 lg:sticky lg:top-20 lg:self-start">
             <StatusActionPanel
               claim={claim}
               role={currentUser.role}
               onActionComplete={loadData}
             />
-          )}
-        </div>
+          </div>
+        )}
 
-        <div className="order-2 space-y-8 lg:order-1 lg:col-span-2">
+        {/* Auditors have no action rail, so the claim takes the full width. */}
+        <div className={cn('order-2 space-y-8 lg:order-1', hasActions ? 'lg:col-span-2' : 'lg:col-span-3')}>
           {/* Three across from sm up, so the three amounts share one row. */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <StatCard label="Policy" value={claim.policy_number} size="sm" />

@@ -48,3 +48,7 @@ export function profileToUser(profile: UserProfileResponse): AuthUser {
     role: profile.role,
   }
 }
+
+/** Who this portal is for. The API enforces access per role either way; this
+ *  keeps staff out of screens that can only fail for them. */
+export const canUsePortal = (role: string): boolean => role === 'CUSTOMER'

@@ -9,7 +9,7 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.db_models import Claim, ClaimStatus, ClaimStatusHistory
-from models.schemas import AssignRequest, ClaimCreate, StatusUpdateRequest, UserContext
+from models.schemas import AssignRequest, ClaimCreate, StaffMember, StatusUpdateRequest, UserContext
 from repositories.claim_repository import ClaimRepository
 from services.errors import BusinessRuleViolation, Forbidden, InvalidTransition, NotFound
 from services.notification_service import send_notification
@@ -30,6 +30,8 @@ _BEFORE_SURVEY = {ClaimStatus.SUBMITTED, ClaimStatus.ASSIGNED, ClaimStatus.UNDER
 _APPROVAL_STANDS = {ClaimStatus.APPROVED, ClaimStatus.PAID}
 # Closed claims keep their last assignment; a rejected claim is reopened by a case-manager override first.
 _CLOSED = {ClaimStatus.PAID, ClaimStatus.REJECTED}
+# A claim is assigned to the people who work it.
+ASSIGNABLE_ROLES = {"SURVEYOR", "ADJUSTOR"}
 
 
 def _actor(user: UserContext) -> str:
@@ -130,12 +132,18 @@ async def update_status(
         raise NotFound("Claim not found")
     if claim.status == ClaimStatus.PAID:
         raise InvalidTransition("A paid claim is final and its status cannot change")
+    if req.status == claim.status:
+        # Not a transition at all; without this a case-manager "override" could rewrite an approved amount.
+        raise InvalidTransition(f"Invalid state transition: the claim is already {claim.status}")
     validate_transition(claim.status, req.status, user.role)
 
     override = is_override(claim.status, req.status, user.role)
     reason = (req.note or "").strip()
     if override and not reason:
         raise BusinessRuleViolation("A reason is required when a case manager overrides the workflow")
+    if req.status == ClaimStatus.REJECTED and not reason:
+        # The customer reads this on their claim's timeline.
+        raise BusinessRuleViolation("A reason is required to reject a claim")
     _validate_amounts(claim, req)
 
     assessed, approved = _amounts_after(claim, req)
@@ -158,21 +166,26 @@ async def assign_claim(
     req: AssignRequest,
     user: UserContext,
     db: AsyncSession,
-    assignee_name: str | None = None,
+    assignee: StaffMember | None = None,
 ) -> Claim:
+    """Assign the claim to `assignee`, the staff-directory entry for `req.assigned_to` (None if unknown)."""
     repo = ClaimRepository(db)
     claim = await repo.get_by_id(claim_id)
     if claim is None:
         raise NotFound("Claim not found")
     if claim.status in _CLOSED:
         raise InvalidTransition("Closed claims (paid or rejected) cannot be reassigned")
+    if assignee is None:
+        raise BusinessRuleViolation("The assignee is not a known staff member")
+    if assignee.role not in ASSIGNABLE_ROLES:
+        raise BusinessRuleViolation("A claim can only be assigned to a surveyor or an adjustor")
     new_status = None
     if claim.status == ClaimStatus.SUBMITTED:
         if user.role != "CASE_MANAGER":
             raise Forbidden("Only case managers can assign a submitted claim")
         new_status = ClaimStatus.ASSIGNED
     verb = "Assigned" if new_status is not None else "Reassigned"
-    note = f"{verb} to {assignee_name}" if assignee_name else f"{verb} to a claims handler"
+    note = f"{verb} to {assignee.name}"
     updated = await repo.assign(claim, req.assigned_to, user.id, new_status, note, changed_by_name=_actor(user))
     if new_status is not None:
         await send_notification(

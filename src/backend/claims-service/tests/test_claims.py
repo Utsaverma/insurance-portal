@@ -8,7 +8,8 @@ from httpx import AsyncClient
 
 from dependencies.auth import get_current_user
 from models.db_models import ClaimStatus
-from models.schemas import UserContext
+from models.schemas import StaffMember, UserContext
+from tests.conftest import ADJUSTOR_ID, AUDITOR_ID, SURVEYOR_ID
 
 
 async def _post_claim(client: AsyncClient, **overrides):
@@ -125,13 +126,15 @@ async def test_staff_directory_is_cached_in_redis(mock_redis):
 
     def auth_service(request: httpx.Request) -> httpx.Response:
         calls.append(request.url.path)
-        return httpx.Response(200, json=[{"id": "u1", "email": "carol@test.com", "full_name": "Carol Surveyor"}])
+        return httpx.Response(
+            200, json=[{"id": "u1", "email": "carol@test.com", "full_name": "Carol Surveyor", "role": "SURVEYOR"}]
+        )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(auth_service)) as client:
         first = await get_staff_directory(client, mock_redis, "token", "req-1")
         second = await get_staff_directory(client, mock_redis, "token", "req-2")
 
-    assert first == second == {"u1": "Carol Surveyor"}
+    assert first == second == {"u1": StaffMember(name="Carol Surveyor", role="SURVEYOR")}
     assert len(calls) == 1  # the second lookup is served from Redis
 
 
@@ -254,14 +257,107 @@ async def test_reassignment_is_audited_and_closed_claims_stay_put(client, db_ses
     _act_as(case_manager_user)
     url = f"/claims/{sample_claim.id}/assign"
 
-    assert (await client.post(url, json={"assigned_to": str(uuid.uuid4())})).json()["status"] == "ASSIGNED"
-    assert (await client.post(url, json={"assigned_to": str(uuid.uuid4())})).status_code == 200
+    first = await client.post(url, json={"assigned_to": SURVEYOR_ID})
+    assert first.json()["status"] == "ASSIGNED"
+    assert first.json()["assigned_staff_name"] == "Carol Surveyor"
+    assert (await client.post(url, json={"assigned_to": ADJUSTOR_ID})).status_code == 200
     history = (await client.get(f"/claims/{sample_claim.id}/history")).json()
-    assert [h["note"] for h in history] == ["Assigned to a claims handler", "Reassigned to a claims handler"]
+    assert [h["note"] for h in history] == ["Assigned to Carol Surveyor", "Reassigned to Bob Adjuster"]
     assert history[-1]["from_status"] == history[-1]["to_status"] == "ASSIGNED"
 
     await _set_status(db_session, sample_claim, ClaimStatus.PAID)
-    assert (await client.post(url, json={"assigned_to": str(uuid.uuid4())})).status_code == 400
+    assert (await client.post(url, json={"assigned_to": SURVEYOR_ID})).status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_claim_is_assigned_only_to_a_known_surveyor_or_adjustor(client, sample_claim, case_manager_user, customer_user):
+    _act_as(case_manager_user)
+    url = f"/claims/{sample_claim.id}/assign"
+
+    unknown = await client.post(url, json={"assigned_to": str(uuid.uuid4())})
+    assert unknown.status_code == 400
+    assert "not a known staff member" in unknown.json()["detail"]
+
+    wrong_role = await client.post(url, json={"assigned_to": AUDITOR_ID})
+    assert wrong_role.status_code == 400
+    assert "surveyor or an adjustor" in wrong_role.json()["detail"]
+
+    claim = (await client.get(f"/claims/{sample_claim.id}")).json()
+    assert claim["status"] == "SUBMITTED" and claim["assigned_to"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"policy_number": "   "},
+        {"incident_description": "too short"},
+        {"incident_date": "2999-01-01"},
+        {"claimed_amount": 0},
+        {"claimed_amount": "10.999"},  # more than 2 decimals: refused, not rounded
+        {"claimed_amount": "99999999999.99"},  # does not fit NUMERIC(12,2)
+        {"claimed_amount": "NaN"},
+    ],
+)
+async def test_submit_claim_rejects_invalid_input(client, overrides):
+    resp = await _post_claim(client, **overrides)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_submit_claim_trims_text_fields(client):
+    resp = await _post_claim(client, policy_number="  POL-777  ")
+    assert resp.status_code == 201
+    assert resp.json()["policy_number"] == "POL-777"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("amount", ["0.004", "99999999999.99", "-5"])
+async def test_status_amounts_must_fit_the_money_column(client, db_session, sample_claim, surveyor_user, amount):
+    await _set_status(db_session, sample_claim, ClaimStatus.UNDER_SURVEY)
+    _act_as(surveyor_user)
+    resp = await client.patch(
+        f"/claims/{sample_claim.id}/status",
+        json={"status": "SURVEYED", "note": "Rear bumper damage", "assessed_amount": amount},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_override_to_the_current_status_is_refused(client, db_session, sample_claim, case_manager_user):
+    sample_claim.approved_amount = Decimal("9000")
+    await _set_status(db_session, sample_claim, ClaimStatus.APPROVED)
+    _act_as(case_manager_user)
+    resp = await client.patch(
+        f"/claims/{sample_claim.id}/status",
+        json={"status": "APPROVED", "note": "Change the amount", "approved_amount": 1},
+    )
+    assert resp.status_code == 400
+    assert "already APPROVED" in resp.json()["detail"]
+    assert Decimal((await client.get(f"/claims/{sample_claim.id}")).json()["approved_amount"]) == Decimal("9000")
+
+
+@pytest.mark.asyncio
+async def test_rejection_requires_a_reason(client, db_session, sample_claim, adjustor_user):
+    await _set_status(db_session, sample_claim, ClaimStatus.UNDER_ADJUDICATION)
+    _act_as(adjustor_user)
+    url = f"/claims/{sample_claim.id}/status"
+
+    no_reason = await client.patch(url, json={"status": "REJECTED", "note": "  "})
+    assert no_reason.status_code == 400
+    assert "reason is required" in no_reason.json()["detail"]
+
+    assert (await client.patch(url, json={"status": "REJECTED", "note": "Excluded peril"})).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_missing_bearer_token_is_rejected_with_401(client):
+    from main import app
+
+    app.dependency_overrides.pop(get_current_user)
+    resp = await client.get("/claims", headers={"Authorization": ""})
+    assert resp.status_code == 401
+    assert resp.headers["www-authenticate"] == "Bearer"
 
 
 @pytest.mark.asyncio

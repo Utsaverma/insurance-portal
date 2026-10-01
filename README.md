@@ -217,7 +217,10 @@ All seeded users share the password **`Test1234!`**.
 | manager@test.com        | `REGIONAL_MANAGER` | Frank Manager  |
 
 Self-registration (`POST /auth/register`) always gives the `CUSTOMER` role. It is API-only; the portal has no
-sign-up page yet.
+sign-up page yet. Emails are case-insensitive: they are stored and matched in lower case.
+
+Each portal signs in only its own accounts: the customer portal accepts customers, the internal portal accepts
+staff. The other kind of account is told which portal to use.
 
 ---
 
@@ -237,6 +240,8 @@ to the backends, stripping the `/api` prefix. The SPAs therefore call a same-ori
 API routes can never collide with SPA routes such as `/claims/:id`. Uploads of up to 12 MB pass through
 nginx; the API itself enforces the 10 MB limit. Both portals ship with `X-Frame-Options`,
 `X-Content-Type-Options`, `Referrer-Policy`, and a `Content-Security-Policy` header.
+The SPA shell (`index.html`) is served with `Cache-Control: no-cache`, so a rebuilt portal is picked up on the
+next page load; the hashed assets it points to are cached as immutable.
 
 ---
 
@@ -264,13 +269,16 @@ SUBMITTED ──(CASE_MANAGER)──▶ ASSIGNED ──(SURVEYOR)──▶ UNDER
 
 - **PAID** is final: no role, including a case manager, can change it. A claim can be paid only once it has an
   approved amount, so no override can skip approval.
-- **REJECTED** ends the normal flow, but a case manager can reopen it with an override.
+- **REJECTED** ends the normal flow, but a case manager can reopen it with an override. Rejecting a claim
+  needs a reason (`note`), which the customer sees on the claim's timeline.
 - A **CASE_MANAGER** may override a claim to any other status, with a mandatory reason. The override is
-  recorded in the status history as `Case manager override: <reason>`.
+  recorded in the status history as `Case manager override: <reason>`. A change to the status the claim
+  already has is refused, so an override cannot quietly rewrite an approved amount.
 - Completing the survey (**SURVEYED**) requires an assessed amount. Approving (**APPROVED**) requires an approved
   amount no higher than the claimed amount. The same rules apply to overrides.
 - Assigning a **SUBMITTED** claim moves it to **ASSIGNED**; later reassignments keep the status. Every assignment
-  is recorded in the history, and closed claims (**PAID** or **REJECTED**) cannot be reassigned.
+  is recorded in the history, and closed claims (**PAID** or **REJECTED**) cannot be reassigned. A claim is
+  assigned only to a **SURVEYOR** or an **ADJUSTOR**.
 
 ---
 
@@ -284,11 +292,11 @@ under `/api` (for example `http://localhost:3000/api/claims`).
 
 | Method | Path             | Auth        | Description                                              |
 |--------|------------------|-------------|----------------------------------------------------------|
-| POST   | `/auth/register` | Public      | Register a customer account                              |
-| POST   | `/auth/login`    | Public      | Log in → access + refresh tokens (rate-limited 10/min)   |
+| POST   | `/auth/register` | Public      | Register a customer account (`409` if the email is taken, in any letter case) |
+| POST   | `/auth/login`    | Public      | Log in → access + refresh tokens (rate-limited 10/min; deactivated accounts are refused) |
 | POST   | `/auth/refresh`  | Refresh JWT | Issue a new token pair (the old refresh token stays valid until it expires) |
 | GET    | `/users/me`      | Bearer      | Current user profile                                     |
-| PATCH  | `/users/me`      | Bearer      | Update own `full_name`                                   |
+| PATCH  | `/users/me`      | Bearer      | Update own `full_name` (cannot be blank)                 |
 | GET    | `/users/all`     | Bearer      | List users (CASE_MANAGER, REGIONAL_MANAGER, SURVEYOR, ADJUSTOR) |
 | GET    | `/health`        | Public      | Liveness check                                           |
 
@@ -296,19 +304,25 @@ under `/api` (for example `http://localhost:3000/api/claims`).
 
 | Method | Path                                              | Auth   | Description                                       |
 |--------|---------------------------------------------------|--------|---------------------------------------------------|
-| POST   | `/claims`                                         | Bearer | Submit a claim (CUSTOMER only)                    |
+| POST   | `/claims`                                         | Bearer | Submit a claim (CUSTOMER only); policy number 1–50 characters, description at least 20, incident date not in the future |
 | GET    | `/claims`                                         | Bearer | List claims, newest first (customers see only their own; `limit` 1–1000) |
 | GET    | `/claims/{id}`                                    | Bearer | Claim detail (ownership-checked for customers)    |
-| POST   | `/claims/{id}/assign`                             | Bearer | Assign to a staff member (CASE_MANAGER, REGIONAL_MANAGER); a SUBMITTED claim becomes ASSIGNED; closed claims cannot be reassigned |
-| PATCH  | `/claims/{id}/status`                             | Bearer | Change status: role + state-machine gated; `assessed_amount` at SURVEYED, `approved_amount` at APPROVED; PAID only with an approved amount; overrides need a `note` |
+| POST   | `/claims/{id}/assign`                             | Bearer | Assign to a surveyor or adjustor (CASE_MANAGER, REGIONAL_MANAGER); a SUBMITTED claim becomes ASSIGNED; closed claims cannot be reassigned |
+| PATCH  | `/claims/{id}/status`                             | Bearer | Change status: role + state-machine gated; `assessed_amount` at SURVEYED, `approved_amount` at APPROVED; PAID only with an approved amount; overrides and rejections need a `note` |
 | GET    | `/claims/{id}/history`                            | Bearer | Audit trail from SUBMITTED: status changes and assignments, each with who acted (`changed_by_name`) |
 | POST   | `/claims/{id}/documents`                          | Bearer | Upload a document (CUSTOMER, SURVEYOR, ADJUSTOR)  |
 | GET    | `/claims/{id}/documents`                          | Bearer | List documents for a claim                        |
 | GET    | `/claims/{id}/documents/{doc_id}/download`        | Bearer | Download a document                               |
 | GET    | `/health`                                         | Public | Liveness check (reports DB + Redis status)        |
 
-Uploads are validated by extension, size (≤ 10 MB) and true content type (content sniffing): mismatches are
-rejected with `415`, oversize with `413`. Business-rule violations return `400` with a `detail` message.
+Uploads are validated by extension, size (≤ 10 MB) and true content type (content sniffing): a file whose
+content is not an allowed type, or does not match its own extension, is rejected with `415`, oversize with
+`413`. A document is listed under its base file name; any directory part the client sent is dropped.
+
+Status codes are the same on every route: `401` without a valid token, `403` for a role or a claim the caller
+may not touch, `404` for an unknown claim or document, `400` with a `detail` message for a business-rule
+violation, and `422` for invalid input. Money is positive with at most 2 decimal places and 10 whole digits
+(the database's `NUMERIC(12,2)`); anything else is refused with `422` rather than rounded.
 
 ---
 
@@ -377,8 +391,8 @@ Two rules that are easy to break and only fail in the production build:
 # Run inside the service images (Python 3.12 + libmagic, exactly as in production).
 # After changing code, rebuild first: docker compose build auth-service claims-service
 cd infrastructure
-docker compose run --rm --no-deps auth-service python -m pytest -q     # 14 tests
-docker compose run --rm --no-deps claims-service python -m pytest -q   # 23 tests
+docker compose run --rm --no-deps auth-service python -m pytest -q     # 19 tests
+docker compose run --rm --no-deps claims-service python -m pytest -q   # 41 tests
 ```
 
 Tests use an in-memory SQLite database, a fake Redis and a stubbed auth-service call, so no other

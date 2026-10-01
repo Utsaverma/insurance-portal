@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { listClaims } from '../api/claims'
+import { apiErrorMessage } from '../api/client'
 import { ClaimStatusBadge } from '../components/ClaimStatusBadge'
 import { CONTENT_WIDTH } from '../components/layout/shell'
 import { formatCurrency } from '../lib/format'
 import {
+  Alert,
   Cell,
   HeaderCell,
   LoadingBlock,
@@ -50,6 +52,7 @@ export function Reports() {
   const [claims, setClaims] = useState<Claim[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     listClaims({ limit: 1000 })
@@ -57,6 +60,8 @@ export function Reports() {
         setClaims(r.items)
         setTotal(r.total)
       })
+      // Without this a failed load rendered as a report on zero claims.
+      .catch((e) => setError(apiErrorMessage(e, 'Could not load the report data. Please try again.')))
       .finally(() => setLoading(false))
   }, [])
 
@@ -77,6 +82,14 @@ export function Reports() {
     return (
       <PageContainer width={CONTENT_WIDTH}>
         <LoadingBlock />
+      </PageContainer>
+    )
+  }
+  if (error) {
+    return (
+      <PageContainer width={CONTENT_WIDTH}>
+        <PageHeader title="Claims Reports" />
+        <Alert tone="danger">{error}</Alert>
       </PageContainer>
     )
   }

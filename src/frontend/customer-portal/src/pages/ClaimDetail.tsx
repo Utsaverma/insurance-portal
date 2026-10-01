@@ -5,6 +5,7 @@ import {
   getClaim, getClaimHistory, getClaimDocuments, downloadDocument,
   type Claim, type ClaimHistoryEntry, type ClaimDocument,
 } from '../api/claims'
+import { apiErrorMessage, apiErrorStatus } from '../api/client'
 import { ClaimStatusBadge } from '../components/ClaimStatusBadge'
 import { StatusTimeline } from '../components/StatusTimeline'
 import { DocumentList, type DocumentListItem } from '../components/DocumentList'
@@ -12,6 +13,7 @@ import { CONTENT_WIDTH } from '../components/layout/shell'
 import { cn } from '../lib/cn'
 import { formatCurrency, formatDate } from '../lib/format'
 import {
+  Alert,
   Card,
   CardBody,
   CardTitle,
@@ -29,20 +31,36 @@ export function ClaimDetail() {
   const [history, setHistory] = useState<ClaimHistoryEntry[]>([])
   const [docs, setDocs] = useState<ClaimDocument[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [downloadError, setDownloadError] = useState('')
 
   useEffect(() => {
     if (!id) return
     Promise.all([getClaim(id), getClaimHistory(id), getClaimDocuments(id)])
       .then(([c, h, d]) => { setClaim(c); setHistory(h); setDocs(d) })
+      .catch((e) => {
+        // Unknown, malformed or someone else's claim id: the "not found" state below.
+        // Anything else is a failure to say so, not a missing claim.
+        const status = apiErrorStatus(e)
+        if (status !== 403 && status !== 404 && status !== 422) {
+          setError(apiErrorMessage(e, 'Could not load this claim. Please try again.'))
+        }
+      })
       .finally(() => setLoading(false))
   }, [id])
 
   const handleDownload = async (doc: DocumentListItem) => {
-    const blob = await downloadDocument(id!, doc.id)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = doc.filename; a.click()
-    URL.revokeObjectURL(url)
+    setDownloadError('')
+    try {
+      const blob = await downloadDocument(id!, doc.id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = doc.filename; a.click()
+      // Deferred: revoking in the same tick can cancel the download in some browsers.
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch {
+      setDownloadError(`Could not download ${doc.filename}. Please try again.`)
+    }
   }
 
   // These early returns used to bypass all page chrome. Inside AppShell the
@@ -57,11 +75,15 @@ export function ClaimDetail() {
   if (!claim) {
     return (
       <PageContainer width={CONTENT_WIDTH}>
-        <EmptyState
-          icon={<FileQuestion aria-hidden className="h-8 w-8" />}
-          title="Claim not found."
-          description="It may have been removed, or you may not have access to it."
-        />
+        {error ? (
+          <Alert tone="danger">{error}</Alert>
+        ) : (
+          <EmptyState
+            icon={<FileQuestion aria-hidden className="h-8 w-8" />}
+            title="Claim not found."
+            description="It may have been removed, or you may not have access to it."
+          />
+        )}
       </PageContainer>
     )
   }
@@ -114,6 +136,7 @@ export function ClaimDetail() {
         <div>
           <SectionHeading>Documents</SectionHeading>
           <DocumentList documents={docs} onDownload={handleDownload} />
+          {downloadError && <Alert tone="danger" className="mt-3">{downloadError}</Alert>}
         </div>
 
         <div>
