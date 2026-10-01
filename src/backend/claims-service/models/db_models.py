@@ -83,3 +83,25 @@ class Notification(Base):
     message: Mapped[str] = mapped_column(Text, nullable=False)
     sent_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="stub")
+
+
+class WorkflowTransition(Base):
+    """One allowed step of the claim workflow: `role` may move a claim from `from_status` to `to_status`.
+    Read by services.workflow_policy (FR3)."""
+    __tablename__ = "workflow_transitions"
+
+    from_status: Mapped[ClaimStatus] = mapped_column(
+        SAEnum(ClaimStatus, name="claim_status", create_type=False), primary_key=True
+    )
+    role: Mapped[str] = mapped_column(String(50), primary_key=True)
+    to_status: Mapped[ClaimStatus] = mapped_column(
+        SAEnum(ClaimStatus, name="claim_status", create_type=False), primary_key=True
+    )
+
+
+class RolePermission(Base):
+    """`role` holds `permission` (see services.workflow_policy for the permission names)."""
+    __tablename__ = "role_permissions"
+
+    role: Mapped[str] = mapped_column(String(50), primary_key=True)
+    permission: Mapped[str] = mapped_column(String(50), primary_key=True)

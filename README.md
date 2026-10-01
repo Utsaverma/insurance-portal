@@ -59,7 +59,8 @@ the four core eClaims capabilities via a single `docker compose up`. See
   audit trail), open claims by age, and the most recently closed claims
 
 **Platform**
-- Role-based access control for six roles (customer + five internal roles), enforced in the API
+- Role-based access control for six roles (customer + five internal roles), enforced in the API. The workflow
+  steps and role permissions are rows in the database, changeable without a redeploy (FR3)
 - Claim status **state machine**: invalid transitions are rejected. A case-manager override needs a reason
   and is recorded in the status history. Paid claims are final
 - **Amounts** carried through the lifecycle: the surveyor's assessed amount and the adjustor's approved amount,
@@ -279,6 +280,15 @@ SUBMITTED ──(CASE_MANAGER)──▶ ASSIGNED ──(SURVEYOR)──▶ UNDER
   approved amount, so no override can skip approval.
 - **REJECTED** ends the normal flow, but a case manager can reopen it with an override. Rejecting a claim
   needs a reason (`note`), which the customer sees on the claim's timeline.
+- The steps above and who may assign, override, upload, submit and read reports are **configurable without a code
+  change** (FR3). They live in the `workflow_transitions` and `role_permissions` tables, which are seeded from the
+  same rules as the code. The claims service reads them through a 30-second cache, so a row changed in psql takes
+  effect within 30 seconds, and the portals follow it because the server computes `allowed_actions`.
+  `GET /health` shows the source (`workflow_policy`: `db`, `code` or `code-fallback`). For example, to stop
+  adjustors rejecting claims:
+  `DELETE FROM workflow_transitions WHERE from_status = 'UNDER_ADJUDICATION' AND role = 'ADJUSTOR' AND to_status = 'REJECTED';`
+  One gap: the internal portal shows the Reports page to the default roles (case and regional managers) whatever
+  `reports.view` says; the API itself follows the table.
 - A **CASE_MANAGER** may override a claim to any other status, with a mandatory reason. The override is
   recorded in the status history as `Case manager override: <reason>`. A change to the status the claim
   already has is refused, so an override cannot quietly rewrite an approved amount.
@@ -414,7 +424,7 @@ Two rules that are easy to break and only fail in the production build:
 # After changing code, rebuild first: docker compose build auth-service claims-service
 cd infrastructure
 docker compose run --rm --no-deps auth-service python -m pytest -q     # 19 tests
-docker compose run --rm --no-deps claims-service python -m pytest -q   # 54 tests
+docker compose run --rm --no-deps claims-service python -m pytest -q   # 59 tests (the init.sql seed check is skipped in the image; CI runs it)
 ```
 
 Tests use an in-memory SQLite database, a fake Redis and a stubbed auth-service call, so no other
@@ -455,6 +465,7 @@ The smoke test needs the running stack, so it is not part of CI.
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Access-token lifetime (POC default 120, long enough for a full demo) |
 | `AUTH_SERVICE_URL`  | Internal URL claims-service uses to validate tokens (default `http://auth-service:8000`) |
 | `REDIS_URL`         | Redis connection string                                |
+| `WORKFLOW_SOURCE`   | `db` (default): the workflow and role permissions come from the `workflow_transitions` and `role_permissions` tables, cached for 30 s, with the rules in code as the fallback while the tables are empty or missing. `code`: the rules in code only |
 | `CUSTOMER_PORTAL_PORT` · `INTERNAL_PORTAL_PORT` · `AUTH_PORT` · `CLAIMS_PORT` | Host ports (defaults 3000 · 3001 · 8001 · 8002) |
 
 Per-service `.env.example` files add service-specific settings (token lifetimes, upload dir,
@@ -497,7 +508,7 @@ The POC is a *minimal working* slice of the architecture in `docs/sad/solution-a
 | CloudFront, WAF, ALB | nginx per portal: `/api` routing, security headers, 12 MB body limit | Local, single host |
 | Auth Service with Okta SSO; tokens validated locally | `auth-service`: HS256 JWT access and refresh tokens. claims-service validates every request by calling `/users/me` | Simple, and role changes take effect immediately; the cost is one extra hop per request |
 | Claims Service + Workflow Engine (Step Functions) | In-service, role-gated state machine in `services/claims_service.py` | The baseline option in the Orchestration DAR. The rules live in one module, so moving to an engine changes orchestration, not business logic |
-| User/RBAC + Configuration Service | Role rules fixed in code | Keeps the POC small |
+| User/RBAC + Configuration Service | Workflow steps and role permissions in two claims-service tables, read through a 30 s Redis cache; no admin UI yet (edited with SQL) | The rules are configurable now; a configuration service and an admin UI only change where they are edited |
 | Event bus + Notification Service (SNS, SES) | Notification stub: logged and persisted | No external providers |
 | Document Service (S3 + OpenSearch) | Validated uploads on a local volume | Local, single host |
 | Separate Claims and User databases (RDS PostgreSQL) | One PostgreSQL instance shared by both services | Fewer moving parts |

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import computed_field
 
@@ -11,6 +13,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     environment: str = "development"
     redis_cache_ttl: int = 60
+    # FR3: "db" reads the workflow and role permissions from their tables (falling back to the copy in code
+    # while they are empty or missing); "code" ignores the tables.
+    workflow_source: Literal["db", "code"] = "db"
+    workflow_cache_ttl: int = 30
     allowed_extensions: list[str] = [".pdf", ".jpg", ".jpeg", ".png"]
     allowed_mimes: list[str] = ["application/pdf", "image/jpeg", "image/png"]
 

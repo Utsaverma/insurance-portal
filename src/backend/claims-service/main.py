@@ -24,6 +24,7 @@ from services.errors import (
     NotFound,
     UnsupportedFile,
 )
+from services.workflow_policy import load_policy
 
 structlog.configure(
     processors=[
@@ -96,13 +97,21 @@ app.include_router(reports_router.router)
 async def health(request: Request):
     db_ok = "ok"
     redis_ok = "ok"
+    # Where the workflow rules come from: "db", "code", or "code-fallback" (the FR3 tables are empty or missing).
+    policy_source = "unknown"
     try:
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))
+            policy_source = (await load_policy(session, request.app.state.redis)).source
     except Exception:
         db_ok = "error"
     try:
         await request.app.state.redis.ping()
     except Exception:
         redis_ok = "error"
-    return {"status": "ok" if db_ok == "ok" and redis_ok == "ok" else "degraded", "db": db_ok, "redis": redis_ok}
+    return {
+        "status": "ok" if db_ok == "ok" and redis_ok == "ok" else "degraded",
+        "db": db_ok,
+        "redis": redis_ok,
+        "workflow_policy": policy_source,
+    }

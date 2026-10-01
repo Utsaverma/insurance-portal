@@ -78,6 +78,50 @@ CREATE TABLE IF NOT EXISTS notifications (
   sent_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ─── WORKFLOW POLICY (FR3) ─────────────────────────────────────────────────
+-- Who may move a claim between statuses, and what each role may do. With WORKFLOW_SOURCE=db (the default) the
+-- claims service reads these through a 30-second cache, so a change here takes effect without a redeploy.
+-- Seeded from the copy in src/backend/claims-service/services/workflow_policy.py, which is also the fallback
+-- while either table is empty; a claims-service test keeps the two in step.
+
+CREATE TABLE IF NOT EXISTS workflow_transitions (
+  from_status claim_status NOT NULL,
+  role        TEXT         NOT NULL,
+  to_status   claim_status NOT NULL,
+  PRIMARY KEY (from_status, role, to_status)
+);
+
+CREATE TABLE IF NOT EXISTS role_permissions (
+  role       TEXT NOT NULL,
+  permission TEXT NOT NULL,
+  PRIMARY KEY (role, permission)
+);
+
+INSERT INTO workflow_transitions (from_status, role, to_status) VALUES
+  ('SUBMITTED',          'CASE_MANAGER', 'ASSIGNED'),
+  ('ASSIGNED',           'SURVEYOR',     'UNDER_SURVEY'),
+  ('UNDER_SURVEY',       'SURVEYOR',     'SURVEYED'),
+  ('SURVEYED',           'ADJUSTOR',     'UNDER_ADJUDICATION'),
+  ('UNDER_ADJUDICATION', 'ADJUSTOR',     'APPROVED'),
+  ('UNDER_ADJUDICATION', 'ADJUSTOR',     'REJECTED'),
+  ('APPROVED',           'ADJUSTOR',     'PAID')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO role_permissions (role, permission) VALUES
+  ('CUSTOMER',         'claims.submit'),
+  ('CUSTOMER',         'documents.upload'),
+  ('CASE_MANAGER',     'claims.assign'),
+  ('CASE_MANAGER',     'claims.reassign'),
+  ('CASE_MANAGER',     'claims.override'),
+  ('CASE_MANAGER',     'reports.view'),
+  ('REGIONAL_MANAGER', 'claims.reassign'),
+  ('REGIONAL_MANAGER', 'reports.view'),
+  ('SURVEYOR',         'claims.work'),
+  ('SURVEYOR',         'documents.upload'),
+  ('ADJUSTOR',         'claims.work'),
+  ('ADJUSTOR',         'documents.upload')
+ON CONFLICT DO NOTHING;
+
 -- ─── INDEXES ───────────────────────────────────────────────────────────────
 
 CREATE INDEX IF NOT EXISTS idx_claims_customer_id        ON claims(customer_id);

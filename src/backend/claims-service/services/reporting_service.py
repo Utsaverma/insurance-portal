@@ -8,8 +8,6 @@ from models.db_models import ClaimStatus
 from models.schemas import AgeingBucket, ClosedClaim, ReportSummary
 from repositories.report_repository import ReportRepository
 
-REPORT_ROLES = {"CASE_MANAGER", "REGIONAL_MANAGER"}
-
 # Open claims by time since submission: (label, youngest age in days, oldest age in days or None).
 AGEING_BUCKETS = [
     ("0–7 days", 0, 7),

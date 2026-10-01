@@ -71,6 +71,9 @@ services:
       JWT_ALGORITHM:    ${JWT_ALGORITHM:-HS256}
       UPLOAD_DIR:       /app/uploads
       MAX_FILE_SIZE_MB: 10
+      # FR3: read the workflow and role permissions from the database ("db", with a fallback to the rules
+      # in code while the tables are empty or missing) or use the code only ("code").
+      WORKFLOW_SOURCE:  ${WORKFLOW_SOURCE:-db}
       ENVIRONMENT:      production
       LOG_LEVEL:        INFO
     volumes:

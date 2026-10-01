@@ -168,6 +168,13 @@ echo "=== Health ==="
 expect 200 "auth-service health" "$BASE_AUTH/health"
 expect 200 "claims-service health" "$BASE_CLAIMS/health"
 [ "$(json "d['status']")" = "ok" ] && pass "claims-service reports db and redis ok" || fail "claims-service health: $(cat "$BODY")"
+policy=$(json "d['workflow_policy']")
+if [ "$policy" = "db" ]; then
+  pass "workflow rules come from the database (FR3)"
+else
+  echo "   ! workflow rules come from: $policy. A database created before the FR3 tables keeps the rules in code;"
+  echo "     reset it (docker compose down -v && docker compose up -d --wait) to seed them."
+fi
 
 echo ""
 echo "=== Smoke test PASSED ==="

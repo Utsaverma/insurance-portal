@@ -4,12 +4,13 @@ from fastapi import APIRouter, Depends, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dependencies.auth import get_current_user, require_role
+from dependencies.auth import get_current_user
 from dependencies.db import get_db
+from dependencies.policy import get_policy, require_permission
 from models.db_models import ClaimDocument
 from models.schemas import DocumentResponse, UserContext
 from services import document_service
-from services.claims_service import UPLOAD_ROLES
+from services.workflow_policy import UPLOAD, WorkflowPolicy
 
 router = APIRouter(prefix="/claims", tags=["documents"])
 
@@ -31,10 +32,11 @@ def _to_response(doc: ClaimDocument) -> DocumentResponse:
 async def upload_document(
     claim_id: uuid.UUID,
     file: UploadFile,
-    user: UserContext = Depends(require_role(*UPLOAD_ROLES)),
+    user: UserContext = Depends(require_permission(UPLOAD)),
     db: AsyncSession = Depends(get_db),
+    policy: WorkflowPolicy = Depends(get_policy),
 ):
-    doc = await document_service.upload_document(claim_id, file, user, db)
+    doc = await document_service.upload_document(claim_id, file, user, db, policy)
     return _to_response(doc)
 
 
