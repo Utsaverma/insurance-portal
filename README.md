@@ -1,5 +1,7 @@
 # eClaims — Insurance Claims Portal
 
+[![CI](https://github.com/Utsaverma/insurance-portal/actions/workflows/ci.yml/badge.svg)](https://github.com/Utsaverma/insurance-portal/actions/workflows/ci.yml)
+
 A microservices-based insurance claims management system that demonstrates the end-to-end
 claim lifecycle: a customer submits a claim with supporting documents, and internal staff
 (case managers, surveyors, adjustors, auditors and managers) process it through a governed
@@ -126,7 +128,9 @@ Each service is fully async (SQLAlchemy 2.0 async + asyncpg).
 
 ```
 insurance-portal/
+├─ .github/workflows/ci.yml      # CI: pytest, portal builds, shared-file and compose checks
 ├─ infrastructure/
+│  ├─ .env.example               # environment template; copy to infrastructure/.env
 │  ├─ docker-compose.yml         # orchestrates all 6 containers
 │  ├─ db/init.sql                # schema + seed data (users, claims, history)
 │  ├─ nginx/                     # per-portal Nginx configs (proxy + security headers)
@@ -142,8 +146,7 @@ insurance-portal/
 │  ├─ dar/                       # Decision/architecture rationale docs
 │  ├─ estimation/                # Estimation spreadsheet
 │  └─ sad/                       # Solution Approach Document + diagrams
-├─ requirements/                 # original assignment / requirement documents
-└─ .env.example                  # root environment template for Docker Compose
+└─ requirements/                 # original assignment / requirement documents
 ```
 
 ---
@@ -407,6 +410,14 @@ containers need to be running.
 
 It stops with a non-zero exit code at the first unexpected result. It makes 6 logins, and login is rate-limited
 to 10 per minute, so don't run it in the minute before a live demo.
+
+**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and on pull requests to `main`:
+- both pytest suites on Python 3.12 with libmagic, matching the service images;
+- `npm ci && npm run build` (type-check plus Vite build) for both portals;
+- `src/frontend/check-shared.sh`;
+- `docker compose config -q` against `.env.example`.
+
+The smoke test needs the running stack, so it is not part of CI.
 
 ---
 
