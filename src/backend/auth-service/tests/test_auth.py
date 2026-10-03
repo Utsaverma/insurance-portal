@@ -4,7 +4,7 @@ import pytest
 from jose import jwt
 
 from config import settings as _settings
-from tests.conftest import CANNED_EMAIL, CANNED_PASSWORD
+from tests.conftest import CANNED_EMAIL, CANNED_PASSWORD, issue_policy
 from services.auth_service import create_jwt
 
 
@@ -13,10 +13,11 @@ def _claims(token: str) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_register_and_login(client):
+async def test_register_and_login(client, db_session):
+    policy_number = await issue_policy(db_session, "new@example.com")
     await client.post(
         "/auth/register",
-        json={"email": "new@example.com", "password": "Password1!", "full_name": "New User"},
+        json={"email": "new@example.com", "password": "Password1!", "full_name": "New User", "policy_number": policy_number},
     )
     resp = await client.post(
         "/auth/login",
@@ -62,11 +63,12 @@ async def test_refresh_token_carries_no_pii(client, registered_user):
 
 
 @pytest.mark.asyncio
-async def test_register_without_full_name_succeeds(client):
+async def test_register_without_full_name_succeeds(client, db_session):
     """init.sql has full_name NOT NULL; the router must supply a fallback."""
+    policy_number = await issue_policy(db_session, "nameless@example.com")
     resp = await client.post(
         "/auth/register",
-        json={"email": "nameless@example.com", "password": "Password1!"},
+        json={"email": "nameless@example.com", "password": "Password1!", "policy_number": policy_number},
     )
     assert resp.status_code == 201
     assert resp.json()["full_name"] == "nameless"
@@ -130,17 +132,18 @@ async def test_refresh_with_access_token_rejected(client, registered_user):
 
 
 @pytest.mark.asyncio
-async def test_email_is_case_insensitive(client):
+async def test_email_is_case_insensitive(client, db_session):
+    policy_number = await issue_policy(db_session, "mixed.case@example.com")
     first = await client.post(
         "/auth/register",
-        json={"email": "Mixed.Case@Example.com", "password": "Password1!", "full_name": "Mixed Case"},
+        json={"email": "Mixed.Case@Example.com", "password": "Password1!", "full_name": "Mixed Case", "policy_number": policy_number},
     )
     assert first.status_code == 201
     assert first.json()["email"] == "mixed.case@example.com"
 
     duplicate = await client.post(
         "/auth/register",
-        json={"email": "mixed.case@EXAMPLE.com", "password": "Password1!", "full_name": "Mixed Case"},
+        json={"email": "mixed.case@EXAMPLE.com", "password": "Password1!", "full_name": "Mixed Case", "policy_number": policy_number},
     )
     assert duplicate.status_code == 409
 
@@ -157,3 +160,20 @@ async def test_deactivated_user_cannot_log_in(client, db_session, registered_use
 
     resp = await client.post("/auth/login", json={"email": CANNED_EMAIL, "password": CANNED_PASSWORD})
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_only_the_policyholder_can_register_with_a_policy_number(client, db_session):
+    policy_number = await issue_policy(db_session, "holder@example.com")
+    attempt = {"email": "intruder@example.com", "password": "Password1!", "full_name": "Intruder"}
+
+    for number in (policy_number, "POL-DOES-NOT-EXIST"):
+        resp = await client.post("/auth/register", json={**attempt, "policy_number": number})
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == f"Policy {number} is not held under this email address"
+
+    assert (await client.post("/auth/register", json={**attempt, "policy_number": "  "})).status_code == 422
+    assert (await client.post("/auth/register", json=attempt)).status_code == 422
+
+    holder = {"email": "Holder@Example.com", "password": "Password1!", "policy_number": f" {policy_number} "}
+    assert (await client.post("/auth/register", json=holder)).status_code == 201

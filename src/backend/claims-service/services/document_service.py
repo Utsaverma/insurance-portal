@@ -12,11 +12,12 @@ from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-from models.db_models import ClaimDocument
+from models.db_models import ClaimDocument, ClaimStatus
 from models.schemas import UserContext
 from repositories.document_repository import DocumentRepository
-from services.claims_service import get_accessible_claim
-from services.errors import FileTooLarge, NotFound, UnsupportedFile
+from services.claims_service import can_upload, get_accessible_claim
+from services.errors import BusinessRuleViolation, FileTooLarge, Forbidden, NotFound, UnsupportedFile
+from services.workflow_policy import WorkflowPolicy
 
 
 # What each allowed extension must actually contain.
@@ -65,9 +66,14 @@ async def validate_and_store(
 
 
 async def upload_document(
-    claim_id: uuid.UUID, file: UploadFile, user: UserContext, db: AsyncSession
+    claim_id: uuid.UUID, file: UploadFile, user: UserContext, db: AsyncSession, workflow: WorkflowPolicy
 ) -> ClaimDocument:
-    await get_accessible_claim(claim_id, user, db)
+    claim = await get_accessible_claim(claim_id, user, db)
+    if claim.status == ClaimStatus.PAID:
+        raise BusinessRuleViolation("A paid claim is final: documents can no longer be added")
+    # Staff add evidence (a survey report, say) only to the claims they are working.
+    if not can_upload(user, claim, workflow):
+        raise Forbidden("This claim is not assigned to you")
     stored_path, mime_type, size = await validate_and_store(file, claim_id)
     return await DocumentRepository(db).create(
         claim_id=claim_id,

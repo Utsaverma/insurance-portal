@@ -12,7 +12,7 @@ _config.settings.environment = "test"
 
 from main import app
 from dependencies.db import get_db
-from models.db_models import Base, ClaimStatus
+from models.db_models import Base, ClaimStatus, Policy
 from models.schemas import UserContext
 
 TEST_ENGINE = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
@@ -77,8 +77,33 @@ def adjustor_user():
     return _make_user("ADJUSTOR")
 
 
+# The policy the test customer claims against: in force for years, $50,000 cover, $500 deductible.
+CUSTOMER_POLICY = "POL-12345"
+
+
 @pytest_asyncio.fixture
-async def client(db_session, mock_redis, customer_user, monkeypatch):
+async def customer_policy(db_session, customer_user):
+    from datetime import date
+    from decimal import Decimal
+
+    policy = Policy(
+        policy_number=CUSTOMER_POLICY,
+        holder_email=customer_user.email,
+        holder_name="Test Customer",
+        product="Personal Auto",
+        insured_item="2022 Test Sedan",
+        effective_from=date(2024, 1, 1),
+        effective_to=date(2099, 12, 31),
+        coverage_limit=Decimal("50000"),
+        deductible=Decimal("500"),
+    )
+    db_session.add(policy)
+    await db_session.flush()
+    return policy
+
+
+@pytest_asyncio.fixture
+async def client(db_session, mock_redis, customer_user, customer_policy, monkeypatch):
     from dependencies.auth import get_current_user
     from repositories.claim_repository import ClaimRepository
     import httpx

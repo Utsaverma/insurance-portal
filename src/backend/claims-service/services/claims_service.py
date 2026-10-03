@@ -9,20 +9,15 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.db_models import Claim, ClaimStatus, ClaimStatusHistory
-from models.schemas import AssignRequest, ClaimCreate, StaffMember, StatusUpdateRequest, UserContext
+from models.schemas import AllowedActions, AssignRequest, ClaimCreate, StaffMember, StatusUpdateRequest, UserContext
 from repositories.claim_repository import ClaimRepository
 from services.errors import BusinessRuleViolation, Forbidden, InvalidTransition, NotFound
-from services.notification_service import send_notification
+from services.notification_service import notify
+from services.policy_gateway import PolicyGateway
+from services.workflow_policy import ASSIGN, OVERRIDE, REASSIGN, UPLOAD, WORK, WorkflowPolicy
 
-# Role-gated claim lifecycle: current status → role → statuses that role may move the claim to.
-TRANSITIONS: dict[ClaimStatus, dict[str, set[ClaimStatus]]] = {
-    ClaimStatus.SUBMITTED: {"CASE_MANAGER": {ClaimStatus.ASSIGNED}},
-    ClaimStatus.ASSIGNED: {"SURVEYOR": {ClaimStatus.UNDER_SURVEY}},
-    ClaimStatus.UNDER_SURVEY: {"SURVEYOR": {ClaimStatus.SURVEYED}},
-    ClaimStatus.SURVEYED: {"ADJUSTOR": {ClaimStatus.UNDER_ADJUDICATION}},
-    ClaimStatus.UNDER_ADJUDICATION: {"ADJUSTOR": {ClaimStatus.APPROVED, ClaimStatus.REJECTED}},
-    ClaimStatus.APPROVED: {"ADJUSTOR": {ClaimStatus.PAID}},
-}
+# Who may take which step, and who holds which permission, is the workflow policy (services.workflow_policy),
+# configurable in the database. The rules below are structural: what the statuses and amounts mean.
 
 # Statuses before the survey is complete: sending a claim back here clears its assessed amount.
 _BEFORE_SURVEY = {ClaimStatus.SUBMITTED, ClaimStatus.ASSIGNED, ClaimStatus.UNDER_SURVEY}
@@ -30,8 +25,6 @@ _BEFORE_SURVEY = {ClaimStatus.SUBMITTED, ClaimStatus.ASSIGNED, ClaimStatus.UNDER
 _APPROVAL_STANDS = {ClaimStatus.APPROVED, ClaimStatus.PAID}
 # Closed claims keep their last assignment; a rejected claim is reopened by a case-manager override first.
 _CLOSED = {ClaimStatus.PAID, ClaimStatus.REJECTED}
-# A claim is assigned to the people who work it.
-ASSIGNABLE_ROLES = {"SURVEYOR", "ADJUSTOR"}
 
 
 def _actor(user: UserContext) -> str:
@@ -39,17 +32,113 @@ def _actor(user: UserContext) -> str:
     return user.full_name or user.email
 
 
-def validate_transition(current: ClaimStatus, requested: ClaimStatus, role: str) -> None:
-    if role == "CASE_MANAGER":
+def _status_label(status: ClaimStatus) -> str:
+    return status.replace("_", " ").lower()
+
+
+def _status_notice(claim: Claim, reason: str) -> tuple[str, str]:
+    """The subject and message a customer gets when their claim changes status."""
+    label = _status_label(claim.status)
+    message = f"Your claim {claim.claim_number} is now {label}."
+    if claim.status == ClaimStatus.APPROVED:
+        message += f" Approved amount: ${claim.approved_amount:,.2f}."
+    elif claim.status == ClaimStatus.PAID:
+        message += f" ${claim.approved_amount:,.2f} has been paid."
+    elif claim.status == ClaimStatus.REJECTED and reason:
+        message += f" Reason: {reason}"
+    return f"Your claim {claim.claim_number} is now {label}", message
+
+
+def validate_transition(current: ClaimStatus, requested: ClaimStatus, role: str, workflow: WorkflowPolicy) -> None:
+    if workflow.allows(role, OVERRIDE):
         return
-    allowed = TRANSITIONS.get(current, {}).get(role, set())
-    if requested not in allowed:
+    if requested not in workflow.steps(current, role):
         raise InvalidTransition(f"Invalid state transition: {current} → {requested} not allowed for role {role}")
 
 
-def is_override(current: ClaimStatus, requested: ClaimStatus, role: str) -> bool:
-    """A case manager moving a claim anywhere other than along their own step of the workflow."""
-    return role == "CASE_MANAGER" and requested not in TRANSITIONS.get(current, {}).get(role, set())
+def is_override(current: ClaimStatus, requested: ClaimStatus, role: str, workflow: WorkflowPolicy) -> bool:
+    """A role holding the override permission moving a claim anywhere other than along its own steps."""
+    return workflow.allows(role, OVERRIDE) and requested not in workflow.steps(current, role)
+
+
+def is_pickup(claim: Claim, requested: ClaimStatus, user: UserContext, workflow: WorkflowPolicy) -> bool:
+    """Taking a surveyed claim from the adjudication queue: completing the survey leaves the claim
+    unassigned, and whoever takes its next step becomes its assignee."""
+    return (
+        workflow.allows(user.role, WORK)
+        and claim.status == ClaimStatus.SURVEYED
+        and claim.assigned_to is None
+        and requested in workflow.steps(claim.status, user.role)
+    )
+
+
+def ensure_assignee(user: UserContext, claim: Claim, requested: ClaimStatus, workflow: WorkflowPolicy) -> None:
+    """Workers (surveyors and adjustors) act only on claims assigned to them; the one exception is the pickup."""
+    if not workflow.allows(user.role, WORK) or claim.assigned_to == user.id or is_pickup(claim, requested, user, workflow):
+        return
+    raise Forbidden("This claim is not assigned to you")
+
+
+def can_upload(user: UserContext, claim: Claim, workflow: WorkflowPolicy) -> bool:
+    # A paid claim is final, its documents included. A rejected one still takes evidence for a reopening.
+    if claim.status == ClaimStatus.PAID or not workflow.allows(user.role, UPLOAD):
+        return False
+    if user.role == "CUSTOMER":
+        return claim.customer_id == user.id
+    return not workflow.allows(user.role, WORK) or claim.assigned_to == user.id
+
+
+def can_assign(user: UserContext, claim: Claim, workflow: WorkflowPolicy) -> bool:
+    if claim.status in _CLOSED:
+        return False
+    return workflow.allows(user.role, ASSIGN if claim.status == ClaimStatus.SUBMITTED else REASSIGN)
+
+
+def allowed_actions(claim: Claim, user: UserContext, workflow: WorkflowPolicy) -> AllowedActions:
+    """The actions update_status, assign_claim and the upload route would accept from this user now."""
+    steps = workflow.steps(claim.status, user.role)
+    transitions = [
+        s for s in ClaimStatus
+        if s in steps
+        # SUBMITTED → ASSIGNED is taken by assigning the claim, which gives it an owner.
+        and not (claim.status == ClaimStatus.SUBMITTED and s == ClaimStatus.ASSIGNED)
+        and (not workflow.allows(user.role, WORK) or claim.assigned_to == user.id or is_pickup(claim, s, user, workflow))
+        and not (s == ClaimStatus.PAID and claim.approved_amount is None)
+    ]
+    overrides = []
+    if workflow.allows(user.role, OVERRIDE) and claim.status != ClaimStatus.PAID:
+        overrides = [
+            s for s in ClaimStatus
+            if s != claim.status
+            and is_override(claim.status, s, user.role, workflow)
+            and not (claim.status == ClaimStatus.SUBMITTED and s == ClaimStatus.ASSIGNED)
+            and not (s == ClaimStatus.PAID and claim.approved_amount is None)
+        ]
+    return AllowedActions(
+        transitions=transitions,
+        overrides=overrides,
+        assign=can_assign(user, claim, workflow),
+        upload=can_upload(user, claim, workflow),
+    )
+
+
+def _assignee_after(
+    claim: Claim, req: StatusUpdateRequest, user: UserContext, workflow: WorkflowPolicy
+) -> uuid.UUID | None:
+    # The survey is the surveyor's last step: the claim waits, unassigned, for an adjustor to pick it up.
+    if req.status == ClaimStatus.SURVEYED:
+        return None
+    if is_pickup(claim, req.status, user, workflow):
+        return user.id
+    return claim.assigned_to
+
+
+def approval_limit(claim: Claim) -> Decimal:
+    """The most an adjustor may approve: the claimed amount, capped by the policy's coverage limit less its
+    deductible, as the terms stood at first notice of loss. Claims filed before the snapshot have no cap."""
+    if claim.coverage_limit is None or claim.deductible is None:
+        return claim.claimed_amount
+    return min(claim.claimed_amount, claim.coverage_limit - claim.deductible)
 
 
 def _validate_amounts(claim: Claim, req: StatusUpdateRequest) -> None:
@@ -65,6 +154,11 @@ def _validate_amounts(claim: Claim, req: StatusUpdateRequest) -> None:
         if req.approved_amount > claim.claimed_amount:
             raise BusinessRuleViolation(
                 f"The approved amount cannot exceed the claimed amount ({claim.claimed_amount})"
+            )
+        if req.approved_amount > approval_limit(claim):
+            raise BusinessRuleViolation(
+                f"The approved amount cannot exceed the policy's coverage limit less its deductible "
+                f"({approval_limit(claim)})"
             )
     # Payment settles the approved amount, so there must be one: PAID is reachable only from APPROVED.
     if req.status == ClaimStatus.PAID and claim.approved_amount is None:
@@ -95,17 +189,30 @@ async def get_accessible_claim(claim_id: uuid.UUID, user: UserContext, db: Async
     return claim
 
 
-async def submit_claim(body: ClaimCreate, user: UserContext, db: AsyncSession) -> Claim:
+async def submit_claim(body: ClaimCreate, user: UserContext, db: AsyncSession, policies: PolicyGateway) -> Claim:
+    policy = await policies.get(body.policy_number)
+    # One message for "no such policy" and "someone else's": a customer cannot probe for other people's policies.
+    if policy is None or not policy.is_held_by(user.email):
+        raise BusinessRuleViolation(f"No policy {body.policy_number} is held in your name")
+    if not policy.in_force_on(body.incident_date):
+        raise BusinessRuleViolation(
+            f"Policy {policy.policy_number} was not in force on {body.incident_date:%b %d, %Y} "
+            f"(it runs from {policy.effective_from:%b %d, %Y} to {policy.effective_to:%b %d, %Y})"
+        )
     repo = ClaimRepository(db)
-    claim = await repo.create(body, user.id)
+    # The policy's terms are copied onto the claim: it is settled on the cover in force when the loss happened.
+    claim = await repo.create(body, user.id, coverage_limit=policy.coverage_limit, deductible=policy.deductible)
     # First notice of loss starts the audit trail.
     await repo.add_history(claim.id, None, ClaimStatus.SUBMITTED, user.id, "Claim submitted", _actor(user))
-    await send_notification(
-        claim_id=claim.id,
+    await notify(
+        db,
+        claim=claim,
         recipient_id=user.id,
-        channel="internal",
-        message=f"Claim {claim.claim_number} received",
-        db=db,
+        subject=f"We received your claim {claim.claim_number}",
+        message=(
+            f"We received your claim {claim.claim_number} for ${claim.claimed_amount:,.2f}. "
+            "We will let you know as it progresses."
+        ),
     )
     return claim
 
@@ -125,6 +232,7 @@ async def update_status(
     req: StatusUpdateRequest,
     user: UserContext,
     db: AsyncSession,
+    workflow: WorkflowPolicy,
 ) -> Claim:
     repo = ClaimRepository(db)
     claim = await repo.get_by_id(claim_id)
@@ -135,9 +243,10 @@ async def update_status(
     if req.status == claim.status:
         # Not a transition at all; without this a case-manager "override" could rewrite an approved amount.
         raise InvalidTransition(f"Invalid state transition: the claim is already {claim.status}")
-    validate_transition(claim.status, req.status, user.role)
+    validate_transition(claim.status, req.status, user.role, workflow)
+    ensure_assignee(user, claim, req.status, workflow)
 
-    override = is_override(claim.status, req.status, user.role)
+    override = is_override(claim.status, req.status, user.role, workflow)
     reason = (req.note or "").strip()
     if override and not reason:
         raise BusinessRuleViolation("A reason is required when a case manager overrides the workflow")
@@ -149,15 +258,17 @@ async def update_status(
     assessed, approved = _amounts_after(claim, req)
     note = f"Case manager override: {reason}" if override else req.note
     updated = await repo.update_status(
-        claim, req.status, user.id, note, assessed, approved, changed_by_name=_actor(user)
+        claim,
+        req.status,
+        user.id,
+        note,
+        assessed,
+        approved,
+        changed_by_name=_actor(user),
+        assigned_to=_assignee_after(claim, req, user, workflow),
     )
-    await send_notification(
-        claim_id=claim_id,
-        recipient_id=updated.customer_id,
-        channel="internal",
-        message=f"Claim {updated.claim_number} status changed to {req.status}",
-        db=db,
-    )
+    subject, message = _status_notice(updated, reason)
+    await notify(db, claim=updated, recipient_id=updated.customer_id, subject=subject, message=message)
     return updated
 
 
@@ -166,6 +277,7 @@ async def assign_claim(
     req: AssignRequest,
     user: UserContext,
     db: AsyncSession,
+    workflow: WorkflowPolicy,
     assignee: StaffMember | None = None,
 ) -> Claim:
     """Assign the claim to `assignee`, the staff-directory entry for `req.assigned_to` (None if unknown)."""
@@ -177,22 +289,27 @@ async def assign_claim(
         raise InvalidTransition("Closed claims (paid or rejected) cannot be reassigned")
     if assignee is None:
         raise BusinessRuleViolation("The assignee is not a known staff member")
-    if assignee.role not in ASSIGNABLE_ROLES:
+    if not workflow.allows(assignee.role, WORK):
         raise BusinessRuleViolation("A claim can only be assigned to a surveyor or an adjustor")
     new_status = None
     if claim.status == ClaimStatus.SUBMITTED:
-        if user.role != "CASE_MANAGER":
+        if not workflow.allows(user.role, ASSIGN):
             raise Forbidden("Only case managers can assign a submitted claim")
         new_status = ClaimStatus.ASSIGNED
-    verb = "Assigned" if new_status is not None else "Reassigned"
+    elif not workflow.allows(user.role, REASSIGN):
+        raise Forbidden("Your role cannot reassign claims")
+    verb = "Assigned" if new_status is not None or claim.assigned_to is None else "Reassigned"
     note = f"{verb} to {assignee.name}"
     updated = await repo.assign(claim, req.assigned_to, user.id, new_status, note, changed_by_name=_actor(user))
+    await notify(
+        db,
+        claim=updated,
+        recipient_id=req.assigned_to,
+        subject=f"Claim {updated.claim_number} is assigned to you",
+        message=f"{_actor(user)} assigned claim {updated.claim_number} ({_status_label(updated.status)}) to you.",
+        audience="staff",
+    )
     if new_status is not None:
-        await send_notification(
-            claim_id=claim_id,
-            recipient_id=updated.customer_id,
-            channel="internal",
-            message=f"Claim {updated.claim_number} status changed to {new_status}",
-            db=db,
-        )
+        subject, message = _status_notice(updated, "")
+        await notify(db, claim=updated, recipient_id=updated.customer_id, subject=subject, message=message)
     return updated

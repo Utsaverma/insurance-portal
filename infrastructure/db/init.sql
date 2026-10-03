@@ -42,8 +42,29 @@ CREATE TABLE IF NOT EXISTS claims (
   incident_description TEXT NOT NULL,
   assigned_to          UUID REFERENCES users(id),
   incident_date        DATE NOT NULL,
+  -- The policy's terms at first notice of loss; approval is capped at coverage_limit - deductible.
+  coverage_limit       NUMERIC(12,2),
+  deductible           NUMERIC(12,2),
   created_at           TIMESTAMPTZ DEFAULT NOW(),
   updated_at           TIMESTAMPTZ DEFAULT NOW()
+);
+-- Databases created before the policy snapshot: add the columns when this file is re-applied.
+ALTER TABLE claims ADD COLUMN IF NOT EXISTS coverage_limit NUMERIC(12,2);
+ALTER TABLE claims ADD COLUMN IF NOT EXISTS deductible     NUMERIC(12,2);
+
+-- The stand-in for the insurer's Policy Administration System (ST6). The services read it through their
+-- policy gateways, as they would call the real system's API: claims-service checks a claim against it, and
+-- auth-service checks a registration. A portal account holds a policy when its email is the holder's.
+CREATE TABLE IF NOT EXISTS policies (
+  policy_number  TEXT PRIMARY KEY,
+  holder_email   TEXT          NOT NULL,
+  holder_name    TEXT          NOT NULL,
+  product        TEXT          NOT NULL,
+  insured_item   TEXT          NOT NULL,
+  effective_from DATE          NOT NULL,
+  effective_to   DATE          NOT NULL CHECK (effective_to >= effective_from),
+  coverage_limit NUMERIC(12,2) NOT NULL CHECK (coverage_limit > 0),
+  deductible     NUMERIC(12,2) NOT NULL CHECK (deductible >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS claim_documents (
@@ -78,12 +99,84 @@ CREATE TABLE IF NOT EXISTS notifications (
   sent_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Transactional outbox (ST5): notification events written in the same transaction as the claim change that
+-- raised them, delivered at least once by the notification-dispatcher. 'dead' is the dead-letter state:
+-- SELECT * FROM outbox_events WHERE status = 'dead';
+CREATE TABLE IF NOT EXISTS outbox_events (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_type   TEXT        NOT NULL,
+  aggregate_id UUID,
+  payload      JSONB       NOT NULL,
+  status       TEXT        NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'dead')),
+  attempts     INT         NOT NULL DEFAULT 0,
+  available_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  sent_at      TIMESTAMPTZ,
+  last_error   TEXT
+);
+
+-- ─── WORKFLOW POLICY (FR3) ─────────────────────────────────────────────────
+-- Who may move a claim between statuses, and what each role may do. With WORKFLOW_SOURCE=db (the default) the
+-- claims service reads these through a 30-second cache, so a change here takes effect without a redeploy.
+-- Seeded from the copy in src/backend/claims-service/services/workflow_policy.py, which is also the fallback
+-- while either table is empty; a claims-service test keeps the two in step.
+
+CREATE TABLE IF NOT EXISTS workflow_transitions (
+  from_status claim_status NOT NULL,
+  role        TEXT         NOT NULL,
+  to_status   claim_status NOT NULL,
+  PRIMARY KEY (from_status, role, to_status)
+);
+
+CREATE TABLE IF NOT EXISTS role_permissions (
+  role       TEXT NOT NULL,
+  permission TEXT NOT NULL,
+  PRIMARY KEY (role, permission)
+);
+
+INSERT INTO workflow_transitions (from_status, role, to_status) VALUES
+  ('SUBMITTED',          'CASE_MANAGER', 'ASSIGNED'),
+  ('ASSIGNED',           'SURVEYOR',     'UNDER_SURVEY'),
+  ('UNDER_SURVEY',       'SURVEYOR',     'SURVEYED'),
+  ('SURVEYED',           'ADJUSTOR',     'UNDER_ADJUDICATION'),
+  ('UNDER_ADJUDICATION', 'ADJUSTOR',     'APPROVED'),
+  ('UNDER_ADJUDICATION', 'ADJUSTOR',     'REJECTED'),
+  ('APPROVED',           'ADJUSTOR',     'PAID')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO role_permissions (role, permission) VALUES
+  ('CUSTOMER',         'claims.submit'),
+  ('CUSTOMER',         'documents.upload'),
+  ('CASE_MANAGER',     'claims.assign'),
+  ('CASE_MANAGER',     'claims.reassign'),
+  ('CASE_MANAGER',     'claims.override'),
+  ('CASE_MANAGER',     'reports.view'),
+  ('REGIONAL_MANAGER', 'claims.reassign'),
+  ('REGIONAL_MANAGER', 'reports.view'),
+  ('SURVEYOR',         'claims.work'),
+  ('SURVEYOR',         'documents.upload'),
+  ('ADJUSTOR',         'claims.work'),
+  ('ADJUSTOR',         'documents.upload')
+ON CONFLICT DO NOTHING;
+
+-- ─── SEED POLICIES ─────────────────────────────────────────────────────────
+-- Alice's current policy (every seeded claim is on it) and her lapsed one; and a policy whose holder, Grace,
+-- has no portal account yet, so she can register with its number.
+
+INSERT INTO policies (policy_number, holder_email, holder_name, product, insured_item,
+                      effective_from, effective_to, coverage_limit, deductible) VALUES
+  ('AUTO-100245', 'customer@test.com', 'Alice Customer', 'Personal Auto', '2023 Toyota Camry',  '2026-01-01', '2026-12-31', 25000.00, 250.00),
+  ('AUTO-099120', 'customer@test.com', 'Alice Customer', 'Personal Auto', '2016 Honda Civic',   '2025-01-01', '2025-12-31', 15000.00, 500.00),
+  ('AUTO-100777', 'grace@test.com',    'Grace Holder',   'Personal Auto', '2024 Ford Escape',   '2026-03-01', '2027-02-28', 30000.00, 500.00)
+ON CONFLICT (policy_number) DO NOTHING;
+
 -- ─── INDEXES ───────────────────────────────────────────────────────────────
 
 CREATE INDEX IF NOT EXISTS idx_claims_customer_id        ON claims(customer_id);
 CREATE INDEX IF NOT EXISTS idx_claims_status             ON claims(status);
 CREATE INDEX IF NOT EXISTS idx_claim_status_history_cid  ON claim_status_history(claim_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient   ON notifications(recipient_id);
+CREATE INDEX IF NOT EXISTS idx_outbox_events_due         ON outbox_events(created_at) WHERE status = 'pending';
 
 -- ─── SEED USERS ────────────────────────────────────────────────────────────
 -- Password for all seed users: Test1234!
@@ -101,6 +194,8 @@ ON CONFLICT (email) DO NOTHING;
 -- ─── SEED CLAIMS ───────────────────────────────────────────────────────────
 -- Six auto claims, one per key status. Every history step is taken by the role the workflow allows, and
 -- timestamps are backdated so the reports show realistic processing times. Runs once, on an empty database.
+-- A claim belongs to whoever is working it: the surveyor until the survey is done, then the adjustor who
+-- picked it up from the adjudication queue.
 
 DO $$
 DECLARE
@@ -139,7 +234,7 @@ BEGIN
   -- 3. UNDER_ADJUDICATION: survey complete, the adjustor is checking cover.
   INSERT INTO claims (claim_number, customer_id, policy_number, status, claimed_amount, assessed_amount, assigned_to,
                       incident_date, incident_description, created_at, updated_at)
-  VALUES ('CLM-20260910-00003', customer, 'AUTO-100245', 'UNDER_ADJUDICATION', 8900.00, 7850.00, surveyor, '2026-09-08',
+  VALUES ('CLM-20260910-00003', customer, 'AUTO-100245', 'UNDER_ADJUDICATION', 8900.00, 7850.00, adjustor, '2026-09-08',
           'Hail storm in Dallas, TX. Dents across the roof and hood; windshield cracked.',
           '2026-09-10 11:20+00', '2026-09-18 15:40+00')
   RETURNING id INTO c;
@@ -153,7 +248,7 @@ BEGIN
   -- 4. APPROVED: approved after the deductible, awaiting payment.
   INSERT INTO claims (claim_number, customer_id, policy_number, status, claimed_amount, assessed_amount, approved_amount,
                       assigned_to, incident_date, incident_description, created_at, updated_at)
-  VALUES ('CLM-20260818-00004', customer, 'AUTO-100245', 'APPROVED', 6400.00, 6100.00, 5850.00, surveyor, '2026-08-16',
+  VALUES ('CLM-20260818-00004', customer, 'AUTO-100245', 'APPROVED', 6400.00, 6100.00, 5850.00, adjustor, '2026-08-16',
           'Struck a deer on a rural highway near Albany, NY. Front grille, hood and radiator damaged; vehicle towed.',
           '2026-08-18 08:45+00', '2026-09-01 12:10+00')
   RETURNING id INTO c;
@@ -168,7 +263,7 @@ BEGIN
   -- 5. REJECTED: an excluded peril; used to demonstrate a case-manager override.
   INSERT INTO claims (claim_number, customer_id, policy_number, status, claimed_amount, assessed_amount, assigned_to,
                       incident_date, incident_description, created_at, updated_at)
-  VALUES ('CLM-20260725-00005', customer, 'AUTO-100245', 'REJECTED', 12000.00, 9800.00, surveyor, '2026-07-22',
+  VALUES ('CLM-20260725-00005', customer, 'AUTO-100245', 'REJECTED', 12000.00, 9800.00, adjustor, '2026-07-22',
           'Engine failed after driving through flood water in Houston, TX. Vehicle towed to a partner workshop.',
           '2026-07-25 10:00+00', '2026-08-11 16:45+00')
   RETURNING id INTO c;
@@ -183,7 +278,7 @@ BEGIN
   -- 6. PAID: settled electronically with the partner workshop.
   INSERT INTO claims (claim_number, customer_id, policy_number, status, claimed_amount, assessed_amount, approved_amount,
                       assigned_to, incident_date, incident_description, created_at, updated_at)
-  VALUES ('CLM-20260706-00006', customer, 'AUTO-100245', 'PAID', 950.00, 900.00, 900.00, surveyor, '2026-07-04',
+  VALUES ('CLM-20260706-00006', customer, 'AUTO-100245', 'PAID', 950.00, 900.00, 900.00, adjustor, '2026-07-04',
           'Windshield cracked by road debris on I-80 near Reno, NV.',
           '2026-07-06 16:30+00', '2026-07-20 11:00+00')
   RETURNING id INTO c;
@@ -199,3 +294,8 @@ BEGIN
   -- The seeded audit trail names its actors, as the service does for every new entry.
   UPDATE claim_status_history h SET changed_by_name = u.full_name FROM users u WHERE u.id = h.changed_by;
 END $$;
+
+-- Claims filed before the policy snapshot (the seeds above, or an older database) take their policy's terms.
+UPDATE claims c SET coverage_limit = p.coverage_limit, deductible = p.deductible
+FROM policies p
+WHERE p.policy_number = c.policy_number AND c.coverage_limit IS NULL;

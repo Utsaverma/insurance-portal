@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend tests (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [auth-service, claims-service]
+    defaults:
+      run:
+        working-directory: src/backend/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v5
+      # Same interpreter and native library as the service images (python:3.12-slim + libmagic1).
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: src/backend/${{ matrix.service }}/requirements.txt
+      - name: Install libmagic
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libmagic1
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run pytest
+        run: python -m pytest -q
+
+  frontend:
+    name: Frontend build (${{ matrix.portal }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        portal: [customer-portal, internal-portal]
+    defaults:
+      run:
+        working-directory: src/frontend/${{ matrix.portal }}
+    steps:
+      - uses: actions/checkout@v5
+      # Matches the node:20-alpine builder stage in the portal Dockerfiles.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: src/frontend/${{ matrix.portal }}/package-lock.json
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Type-check and build
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: /api
+
+  checks:
+    name: Shared files & compose config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Shared design-system files are byte-identical
+        run: bash src/frontend/check-shared.sh
+      - name: docker compose config is valid
+        working-directory: infrastructure
+        # The template leaves JWT_SECRET_KEY empty on purpose; a throwaway value satisfies the :? guard.
+        env:
+          JWT_SECRET_KEY: ci-only-not-a-secret-0123456789abcdef
+        run: docker compose --env-file .env.example config -q

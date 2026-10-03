@@ -11,13 +11,14 @@ set -euo pipefail
 if [ -f .env ]; then
   while IFS='=' read -r key value; do
     [ -z "${!key:-}" ] && export "$key=$value"
-  done < <(grep -E '^(CUSTOMER_PORTAL_PORT|INTERNAL_PORTAL_PORT|AUTH_PORT|CLAIMS_PORT)=' .env || true)
+  done < <(grep -E '^(CUSTOMER_PORTAL_PORT|INTERNAL_PORTAL_PORT|AUTH_PORT|CLAIMS_PORT|MAIL_UI_PORT)=' .env || true)
 fi
 CUSTOMER_PORTAL="http://localhost:${CUSTOMER_PORTAL_PORT:-3000}"
 INTERNAL_PORTAL="http://localhost:${INTERNAL_PORTAL_PORT:-3001}"
 API="$CUSTOMER_PORTAL/api"
 BASE_AUTH="http://localhost:${AUTH_PORT:-8001}"
 BASE_CLAIMS="http://localhost:${CLAIMS_PORT:-8002}"
+MAIL_UI="http://localhost:${MAIL_UI_PORT:-8025}"
 
 BODY=$(mktemp); FILE=$(mktemp)
 trap 'rm -f "$BODY" "$FILE"' EXIT
@@ -69,8 +70,15 @@ CM=$(login casemanager@test.com)
 SURVEYOR=$(login surveyor@test.com)
 ADJUSTOR=$(login adjuster@test.com)
 SMOKE_EMAIL="smoke_$(date +%s)_$RANDOM@test.com"
-expect 201 "register a smoke-test customer" -X POST "$API/auth/register" -H 'Content-Type: application/json' \
-  -d "{\"email\":\"$SMOKE_EMAIL\",\"password\":\"Test1234!\",\"full_name\":\"Smoke Test\"}"
+# The policy system (a stub table) issues the smoke customer a policy first: $4,000 cover, $250 deductible.
+SMOKE_POLICY="SMOKE-$(date +%s)-$RANDOM"
+docker compose exec -T postgres sh -c "psql -q -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -c \"INSERT INTO policies
+  VALUES ('$SMOKE_POLICY', '$SMOKE_EMAIL', 'Smoke Test', 'Personal Auto', '2021 Smoke Sedan', '2026-01-01', '2026-12-31', 4000, 250)\"" \
+  && pass "policy $SMOKE_POLICY issued to the smoke customer" || fail "could not insert the smoke policy (are the ST6 tables there?)"
+expect 400 "nobody registers with someone else's policy" -X POST "$API/auth/register" -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$SMOKE_EMAIL\",\"password\":\"Test1234!\",\"full_name\":\"Smoke Test\",\"policy_number\":\"AUTO-100245\"}"
+expect 201 "register a smoke-test customer by their policy number" -X POST "$API/auth/register" -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$SMOKE_EMAIL\",\"password\":\"Test1234!\",\"full_name\":\"Smoke Test\",\"policy_number\":\"$SMOKE_POLICY\"}"
 expect 200 "login smoke-test customer" -X POST "$API/auth/login" -H 'Content-Type: application/json' \
   -d "{\"email\":\"$SMOKE_EMAIL\",\"password\":\"Test1234!\"}"
 CUSTOMER=$(json "d['access_token']")
@@ -80,16 +88,27 @@ expect 200 "refresh issues a new access token" -X POST "$API/auth/refresh" -H 'C
 [ "$(json "d['access_token']")" != "$CUSTOMER" ] && pass "refreshed token differs" || fail "refresh returned the same token"
 
 echo "=== Claim journey ==="
+expect 200 "the customer lists the policies held in their name" "$API/policies" -H "Authorization: Bearer $CUSTOMER"
+[ "$(json "[p['policy_number'] for p in d]")" = "['$SMOKE_POLICY']" ] && pass "only the smoke customer's own policy is listed" \
+  || fail "policies listed: $(json "[p['policy_number'] for p in d]")"
+expect 400 "a claim against someone else's policy is refused" -X POST "$API/claims" -H "Authorization: Bearer $CUSTOMER" \
+  -H 'Content-Type: application/json' \
+  -d '{"policy_number":"AUTO-100245","incident_date":"2026-09-29","incident_description":"Smoke test: this claim must not be created.","claimed_amount":100}'
+expect 400 "a claim on a policy that was not in force is refused" -X POST "$API/claims" -H "Authorization: Bearer $ALICE" \
+  -H 'Content-Type: application/json' \
+  -d '{"policy_number":"AUTO-099120","incident_date":"2026-09-29","incident_description":"Smoke test: this claim must not be created.","claimed_amount":100}'
 expect 201 "customer submits a claim" -X POST "$API/claims" -H "Authorization: Bearer $CUSTOMER" \
   -H 'Content-Type: application/json' \
-  -d '{"policy_number":"AUTO-900001","incident_date":"2026-09-29","incident_description":"Smoke test: rear bumper cracked in a car park.","claimed_amount":4200}'
+  -d "{\"policy_number\":\"$SMOKE_POLICY\",\"incident_date\":\"2026-09-29\",\"incident_description\":\"Smoke test: rear bumper cracked in a car park.\",\"claimed_amount\":4200}"
 CLAIM=$(json "d['id']")
+[ "$(json "d['approval_limit']")" = "3750.00" ] && pass "the claim carries the policy's cover: at most 3750.00 approvable" \
+  || fail "approval limit $(json "d['approval_limit']")"
 expect 422 "a claim with a blank policy number and a future incident date is refused" -X POST "$API/claims" \
   -H "Authorization: Bearer $CUSTOMER" -H 'Content-Type: application/json' \
   -d '{"policy_number":"  ","incident_date":"2999-01-01","incident_description":"Smoke test: this claim must not be created.","claimed_amount":100}'
 expect 422 "an amount the database cannot hold is refused" -X POST "$API/claims" \
   -H "Authorization: Bearer $CUSTOMER" -H 'Content-Type: application/json' \
-  -d '{"policy_number":"AUTO-900001","incident_date":"2026-09-29","incident_description":"Smoke test: this claim must not be created.","claimed_amount":99999999999.99}'
+  -d "{\"policy_number\":\"$SMOKE_POLICY\",\"incident_date\":\"2026-09-29\",\"incident_description\":\"Smoke test: this claim must not be created.\",\"claimed_amount\":99999999999.99}"
 expect 200 "history starts at SUBMITTED" "$API/claims/$CLAIM/history" -H "Authorization: Bearer $CUSTOMER"
 [ "$(json "d[0]['to_status']")" = "SUBMITTED" ] && pass "first history row is SUBMITTED" || fail "history does not start at SUBMITTED"
 
@@ -106,6 +125,7 @@ expect 403 "another customer cannot read the claim" "$API/claims/$CLAIM" -H "Aut
 
 expect 200 "case manager reads the staff directory" "$API/users/all" -H "Authorization: Bearer $CM"
 SURVEYOR_ID=$(json "[u['id'] for u in d if u['role'] == 'SURVEYOR'][0]")
+ADJUSTOR_ID=$(json "[u['id'] for u in d if u['role'] == 'ADJUSTOR'][0]")
 CUSTOMER_ID=$(json "[u['id'] for u in d if u['role'] == 'CUSTOMER'][0]")
 expect 400 "a claim cannot be assigned to a customer" -X POST "$API/claims/$CLAIM/assign" \
   -H "Authorization: Bearer $CM" -H 'Content-Type: application/json' -d "{\"assigned_to\":\"$CUSTOMER_ID\"}"
@@ -114,13 +134,25 @@ expect 400 "a claim cannot be assigned to an unknown user" -X POST "$API/claims/
 expect 200 "case manager assigns the claim to a surveyor" -X POST "$API/claims/$CLAIM/assign" \
   -H "Authorization: Bearer $CM" -H 'Content-Type: application/json' -d "{\"assigned_to\":\"$SURVEYOR_ID\"}"
 [ "$(json "d['status']")" = "ASSIGNED" ] && pass "claim is ASSIGNED" || fail "claim not ASSIGNED after assignment"
+expect 200 "surveyor reads the claim" "$API/claims/$CLAIM" -H "Authorization: Bearer $SURVEYOR"
+[ "$(json "d['allowed_actions']['transitions']")" = "['UNDER_SURVEY']" ] && pass "the server offers the surveyor only the next step" \
+  || fail "surveyor offered $(json "d['allowed_actions']")"
 
 patch_status 200 "surveyor starts the survey" "$SURVEYOR" "$CLAIM" '{"status":"UNDER_SURVEY"}'
 patch_status 400 "survey cannot complete without an assessed amount" "$SURVEYOR" "$CLAIM" '{"status":"SURVEYED","note":"Bumper replacement"}'
 patch_status 200 "surveyor completes the survey with an assessed amount" "$SURVEYOR" "$CLAIM" \
   '{"status":"SURVEYED","note":"Bumper replacement","assessed_amount":3900}'
+[ "$(json "d['assigned_to']")" = "None" ] && pass "a surveyed claim waits unassigned in the adjudication queue" \
+  || fail "surveyed claim still assigned to $(json "d['assigned_to']")"
 patch_status 200 "adjustor starts adjudication" "$ADJUSTOR" "$CLAIM" '{"status":"UNDER_ADJUDICATION"}'
+[ "$(json "d['assigned_to']")" = "$ADJUSTOR_ID" ] && pass "the adjustor who picked the claim up is its assignee" \
+  || fail "claim assigned to $(json "d['assigned_to']") after pickup"
+make_pdf 1024
+expect 403 "staff cannot add documents to a claim assigned to someone else" -X POST "$API/claims/$CLAIM/documents" \
+  -H "Authorization: Bearer $SURVEYOR" -F "file=@$FILE;filename=late-report.pdf;type=application/pdf"
 patch_status 400 "approval above the claimed amount is refused" "$ADJUSTOR" "$CLAIM" '{"status":"APPROVED","approved_amount":5000}'
+patch_status 400 "approval above the policy's cover less its deductible is refused" "$ADJUSTOR" "$CLAIM" \
+  '{"status":"APPROVED","approved_amount":3800}'
 patch_status 200 "adjustor approves an amount" "$ADJUSTOR" "$CLAIM" '{"status":"APPROVED","approved_amount":3650}'
 expect 200 "customer reads the decision" "$API/claims/$CLAIM" -H "Authorization: Bearer $CUSTOMER"
 [ "$(json "d['status'], d['approved_amount']")" = "APPROVED 3650.00" ] && pass "customer sees APPROVED with 3650.00" \
@@ -131,7 +163,7 @@ patch_status 400 "a paid claim is final" "$CM" "$CLAIM" '{"status":"UNDER_ADJUDI
 
 expect 201 "customer submits a second claim" -X POST "$API/claims" -H "Authorization: Bearer $CUSTOMER" \
   -H 'Content-Type: application/json' \
-  -d '{"policy_number":"AUTO-900001","incident_date":"2026-09-29","incident_description":"Smoke test: duplicate report of the same incident.","claimed_amount":1200}'
+  -d "{\"policy_number\":\"$SMOKE_POLICY\",\"incident_date\":\"2026-09-29\",\"incident_description\":\"Smoke test: duplicate report of the same incident.\",\"claimed_amount\":1200}"
 SECOND=$(json "d['id']")
 patch_status 400 "an override needs a reason" "$CM" "$SECOND" '{"status":"REJECTED"}'
 patch_status 400 "no claim is paid without an approved amount" "$CM" "$SECOND" '{"status":"PAID","note":"Pay now"}'
@@ -144,10 +176,41 @@ expect 200 "override is in the audit trail" "$API/claims/$SECOND/history" -H "Au
 expect 400 "a closed claim cannot be reassigned" -X POST "$API/claims/$SECOND/assign" \
   -H "Authorization: Bearer $CM" -H 'Content-Type: application/json' -d "{\"assigned_to\":\"$SURVEYOR_ID\"}"
 
+echo "=== Notifications ==="
+# The dispatcher delivers the outbox asynchronously, so give the last email a few seconds to land in Mailpit.
+mail_count() {
+  curl -s -G "$MAIL_UI/api/v1/search" --data-urlencode "query=$1" \
+    | python3 -c "import json,sys; print(json.load(sys.stdin)['messages_count'])" 2>/dev/null || echo 0
+}
+for _ in $(seq 1 20); do
+  [ "$(mail_count "to:$SMOKE_EMAIL subject:\"is now paid\"")" -ge 1 ] && break
+  sleep 1
+done
+[ "$(mail_count "to:$SMOKE_EMAIL subject:\"is now paid\"")" -ge 1 ] && pass "the customer is emailed when the claim is paid (outbox → dispatcher → $MAIL_UI)" \
+  || fail "no 'is now paid' email to $SMOKE_EMAIL in Mailpit; check: docker compose logs notification-dispatcher"
+[ "$(mail_count "to:surveyor@test.com subject:\"is assigned to you\"")" -ge 1 ] && pass "the surveyor is emailed about the assignment" \
+  || fail "no assignment email to surveyor@test.com in Mailpit"
+
+echo "=== Reports ==="
+expect 200 "case manager reads the claims count" "$API/claims?limit=1" -H "Authorization: Bearer $CM"
+TOTAL=$(json "d['total']")
+expect 200 "case manager reads the report through the internal portal" "$INTERNAL_PORTAL/api/reports/summary" \
+  -H "Authorization: Bearer $CM"
+[ "$(json "d['total_claims']")" = "$TOTAL" ] && pass "the report counts every claim ($TOTAL)" \
+  || fail "the report counts $(json "d['total_claims']") of $TOTAL claims"
+expect 403 "reports are not open to surveyors" "$INTERNAL_PORTAL/api/reports/summary" -H "Authorization: Bearer $SURVEYOR"
+
 echo "=== Health ==="
 expect 200 "auth-service health" "$BASE_AUTH/health"
 expect 200 "claims-service health" "$BASE_CLAIMS/health"
 [ "$(json "d['status']")" = "ok" ] && pass "claims-service reports db and redis ok" || fail "claims-service health: $(cat "$BODY")"
+policy=$(json "d['workflow_policy']")
+if [ "$policy" = "db" ]; then
+  pass "workflow rules come from the database (FR3)"
+else
+  echo "   ! workflow rules come from: $policy. A database created before the FR3 tables keeps the rules in code;"
+  echo "     reset it (docker compose down -v && docker compose up -d --wait) to seed them."
+fi
 
 echo ""
 echo "=== Smoke test PASSED ==="

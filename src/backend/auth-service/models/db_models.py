@@ -31,3 +31,12 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class Policy(Base):
+    """The policy-system stub (infrastructure/db/init.sql). auth-service reads only who holds a policy, to
+    check that someone registering is its holder."""
+    __tablename__ = "policies"
+
+    policy_number: Mapped[str] = mapped_column(String(50), primary_key=True)
+    holder_email: Mapped[str] = mapped_column(String(255), nullable=False)

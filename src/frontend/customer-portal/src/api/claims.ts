@@ -10,6 +10,15 @@ export type ClaimStatus =
   | 'REJECTED'
   | 'PAID'
 
+/** What the customer may do to a claim right now, computed by the server. */
+export interface AllowedActions {
+  transitions: ClaimStatus[]
+  overrides: ClaimStatus[]
+  assign: boolean
+  /** POST /claims/{id}/documents: add evidence after submission. */
+  upload: boolean
+}
+
 export interface Claim {
   id: string
   claim_number: string
@@ -24,6 +33,7 @@ export interface Claim {
   approved_amount: string | number | null
   status: ClaimStatus
   assigned_to: string | null
+  allowed_actions: AllowedActions
   created_at: string
   updated_at: string
 }
@@ -51,6 +61,20 @@ export interface ClaimDocument {
   download_url: string
 }
 
+/** A policy held in the customer's name, as the policy system reports it. */
+export interface Policy {
+  policy_number: string
+  holder_name: string
+  product: string
+  insured_item: string
+  effective_from: string
+  effective_to: string
+  coverage_limit: string | number
+  deductible: string | number
+  /** Whether it covers a loss today. A claim is checked against the incident date. */
+  in_force: boolean
+}
+
 export interface SubmitClaimPayload {
   policy_number: string
   incident_date: string
@@ -66,6 +90,11 @@ export const getClaims = async (): Promise<Claim[]> => {
 
 export const getClaim = async (id: string): Promise<Claim> => {
   const res = await apiClient.get<Claim>(`/claims/${id}`)
+  return res.data
+}
+
+export const getMyPolicies = async (): Promise<Policy[]> => {
+  const res = await apiClient.get<Policy[]>('/policies')
   return res.data
 }
 

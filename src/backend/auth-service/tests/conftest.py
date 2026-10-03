@@ -15,7 +15,7 @@ _config.settings.database_url = "sqlite+aiosqlite:///:memory:"
 
 from main import app
 from dependencies.db import get_db
-from models.db_models import Base
+from models.db_models import Base, Policy
 
 TEST_ENGINE = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
 TestSessionLocal = async_sessionmaker(TEST_ENGINE, expire_on_commit=False, class_=AsyncSession)
@@ -75,11 +75,20 @@ async def client(db_session):
     app.dependency_overrides.clear()
 
 
+async def issue_policy(db, email: str, policy_number: str | None = None) -> str:
+    """What the policy system does before anyone can register: issue a policy to a holder's email."""
+    policy_number = policy_number or f"POL-{email.split('@')[0].upper()}"
+    db.add(Policy(policy_number=policy_number, holder_email=email.lower()))
+    await db.commit()
+    return policy_number
+
+
 @pytest_asyncio.fixture
-async def registered_user(client):
+async def registered_user(client, db_session):
+    policy_number = await issue_policy(db_session, CANNED_EMAIL)
     resp = await client.post(
         "/auth/register",
-        json={"email": CANNED_EMAIL, "password": CANNED_PASSWORD, "full_name": "Test User"},
+        json={"email": CANNED_EMAIL, "password": CANNED_PASSWORD, "full_name": "Test User", "policy_number": policy_number},
     )
     assert resp.status_code == 201
     return resp.json()

@@ -1,4 +1,3 @@
-import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -12,8 +11,11 @@ from sqlalchemy import text
 
 from api.routers import claims as claims_router
 from api.routers import documents as documents_router
+from api.routers import policies as policies_router
+from api.routers import reports as reports_router
 from config import settings
 from dependencies.db import AsyncSessionLocal, engine
+from logging_config import configure_logging
 from services.errors import (
     BusinessRuleViolation,
     ClaimsError,
@@ -23,18 +25,9 @@ from services.errors import (
     NotFound,
     UnsupportedFile,
 )
+from services.workflow_policy import load_policy
 
-structlog.configure(
-    processors=[
-        structlog.contextvars.merge_contextvars,
-        structlog.stdlib.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.JSONRenderer(),
-    ],
-    wrapper_class=structlog.make_filtering_bound_logger(getattr(logging, settings.log_level.upper(), logging.INFO)),
-    context_class=dict,
-    logger_factory=structlog.PrintLoggerFactory(),
-)
+configure_logging()
 
 log = structlog.get_logger(__name__)
 
@@ -88,19 +81,29 @@ async def request_id_middleware(request: Request, call_next):
 
 app.include_router(claims_router.router)
 app.include_router(documents_router.router)
+app.include_router(policies_router.router)
+app.include_router(reports_router.router)
 
 
 @app.get("/health", tags=["health"])
 async def health(request: Request):
     db_ok = "ok"
     redis_ok = "ok"
+    # Where the workflow rules come from: "db", "code", or "code-fallback" (the FR3 tables are empty or missing).
+    policy_source = "unknown"
     try:
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))
+            policy_source = (await load_policy(session, request.app.state.redis)).source
     except Exception:
         db_ok = "error"
     try:
         await request.app.state.redis.ping()
     except Exception:
         redis_ok = "error"
-    return {"status": "ok" if db_ok == "ok" and redis_ok == "ok" else "degraded", "db": db_ok, "redis": redis_ok}
+    return {
+        "status": "ok" if db_ok == "ok" and redis_ok == "ok" else "degraded",
+        "db": db_ok,
+        "redis": redis_ok,
+        "workflow_policy": policy_source,
+    }

@@ -32,6 +32,20 @@ export interface UserProfileResponse {
   created_at: string
 }
 
+/** What the signed-in user may do to a claim right now, computed by the server
+ *  from the workflow and the assignment. The UI renders from this instead of
+ *  re-implementing the state machine. */
+export interface AllowedActions {
+  /** Workflow steps: PATCH /claims/{id}/status with one of these. */
+  transitions: ClaimStatus[]
+  /** Case-manager overrides: the same PATCH, with a mandatory reason. */
+  overrides: ClaimStatus[]
+  /** POST /claims/{id}/assign */
+  assign: boolean
+  /** POST /claims/{id}/documents */
+  upload: boolean
+}
+
 export interface Claim {
   id: string
   claim_number: string
@@ -48,6 +62,12 @@ export interface Claim {
   status: ClaimStatus
   assigned_to: string | null
   assigned_staff_name?: string
+  /** The policy's terms at first notice of loss; null on claims filed before the snapshot. */
+  coverage_limit: string | number | null
+  deductible: string | number | null
+  /** The most that may be approved: the claimed amount, capped by coverage limit less deductible. */
+  approval_limit: string | number
+  allowed_actions: AllowedActions
   created_at: string
   updated_at: string
 }
@@ -73,4 +93,29 @@ export interface ClaimHistoryEntry {
   changed_by_name: string | null
   changed_at: string
   note: string | null
+}
+
+/** GET /reports/summary: every figure is aggregated by the claims service. */
+export interface ReportSummary {
+  as_of: string
+  total_claims: number
+  by_status: Record<ClaimStatus, number>
+  total_approved_amount: string | number
+  total_paid_amount: string | number
+  closed_claims: number
+  /** Submission to the claim's latest PAID/REJECTED history entry; null with no closed claims. */
+  avg_processing_days: number | null
+  /** Open claims by time since submission, youngest first. */
+  open_ageing: { label: string; min_days: number; max_days: number | null; count: number }[]
+  recently_closed: {
+    id: string
+    claim_number: string
+    policy_number: string
+    status: ClaimStatus
+    claimed_amount: string | number
+    approved_amount: string | number | null
+    submitted_at: string
+    closed_at: string
+    processing_days: number
+  }[]
 }

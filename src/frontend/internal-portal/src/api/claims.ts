@@ -47,6 +47,15 @@ export const listDocuments = async (claimId: string): Promise<ClaimDocument[]> =
   return res.data
 }
 
+export const uploadDocument = async (claimId: string, file: File): Promise<ClaimDocument> => {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await apiClient.post<ClaimDocument>(`/claims/${claimId}/documents`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return res.data
+}
+
 export const downloadDocument = async (claimId: string, docId: string): Promise<Blob> => {
   const res = await apiClient.get(`/claims/${claimId}/documents/${docId}/download`, { responseType: 'blob' })
   return res.data

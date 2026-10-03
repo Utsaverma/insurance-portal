@@ -60,11 +60,3 @@ async def get_bearer_token(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> str:
     return _token_from(credentials)
-
-
-def require_role(*roles: str):
-    async def dependency(user: UserContext = Depends(get_current_user)) -> UserContext:
-        if user.role not in roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
-        return user
-    return dependency

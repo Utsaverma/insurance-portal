@@ -8,6 +8,7 @@ import { ClaimStatusBadge } from '../components/ClaimStatusBadge'
 import { StatusActionPanel } from '../components/StatusActionPanel'
 import { StatusTimeline } from '../components/StatusTimeline'
 import { ClaimDocumentViewer } from '../components/ClaimDocumentViewer'
+import { AddDocument } from '../components/AddDocument'
 import { CONTENT_WIDTH } from '../components/layout/shell'
 import { cn } from '../lib/cn'
 import { formatCurrency, formatDate } from '../lib/format'
@@ -114,6 +115,7 @@ export function ClaimDetail() {
             <StatusActionPanel
               claim={claim}
               role={currentUser.role}
+              userId={currentUser.id}
               onActionComplete={loadData}
             />
           </div>
@@ -121,8 +123,8 @@ export function ClaimDetail() {
 
         {/* Auditors have no action rail, so the claim takes the full width. */}
         <div className={cn('order-2 space-y-8 lg:order-1', hasActions ? 'lg:col-span-2' : 'lg:col-span-3')}>
-          {/* Three across from sm up, so the three amounts share one row. */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {/* Four across from sm up: the claim's facts, then its four amounts in one row. */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard label="Policy" value={claim.policy_number} size="sm" />
             <StatCard label="Incident Date" value={formatDate(claim.incident_date)} size="sm" numeric />
             <StatCard
@@ -131,6 +133,7 @@ export function ClaimDetail() {
               size="sm"
               numeric
             />
+            <StatCard label="Deductible" value={formatCurrency(claim.deductible)} size="sm" numeric />
             <StatCard
               label="Claimed Amount"
               value={formatCurrency(claim.claimed_amount)}
@@ -149,6 +152,7 @@ export function ClaimDetail() {
               size="sm"
               numeric
             />
+            <StatCard label="Coverage Limit" value={formatCurrency(claim.coverage_limit)} size="sm" numeric />
           </div>
 
           <Card>
@@ -161,6 +165,9 @@ export function ClaimDetail() {
           <div>
             <SectionHeading>Documents</SectionHeading>
             <ClaimDocumentViewer claimId={claim.id} documents={docs} />
+            {claim.allowed_actions.upload && (
+              <AddDocument claimId={claim.id} hint="(survey report, photos, estimates)" onUploaded={loadData} />
+            )}
           </div>
 
           <div>

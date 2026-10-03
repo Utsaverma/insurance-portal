@@ -9,6 +9,7 @@ import { apiErrorMessage, apiErrorStatus } from '../api/client'
 import { ClaimStatusBadge } from '../components/ClaimStatusBadge'
 import { StatusTimeline } from '../components/StatusTimeline'
 import { DocumentList, type DocumentListItem } from '../components/DocumentList'
+import { AddDocument } from '../components/AddDocument'
 import { CONTENT_WIDTH } from '../components/layout/shell'
 import { cn } from '../lib/cn'
 import { formatCurrency, formatDate } from '../lib/format'
@@ -48,6 +49,13 @@ export function ClaimDetail() {
       })
       .finally(() => setLoading(false))
   }, [id])
+
+  const reloadDocs = () => {
+    if (!id) return
+    getClaimDocuments(id)
+      .then(setDocs)
+      .catch(() => setDownloadError('The document was uploaded, but the list could not be refreshed. Reload the page.'))
+  }
 
   const handleDownload = async (doc: DocumentListItem) => {
     setDownloadError('')
@@ -137,6 +145,13 @@ export function ClaimDetail() {
           <SectionHeading>Documents</SectionHeading>
           <DocumentList documents={docs} onDownload={handleDownload} />
           {downloadError && <Alert tone="danger" className="mt-3">{downloadError}</Alert>}
+          {claim.allowed_actions.upload && (
+            <AddDocument
+              claimId={claim.id}
+              hint="(photos, police report, repair estimate)"
+              onUploaded={reloadDocs}
+            />
+          )}
         </div>
 
         <div>

@@ -29,6 +29,19 @@ class ClaimCreate(BaseModel):
         return v
 
 
+class AllowedActions(BaseModel):
+    """What the caller may do to this claim right now, worked out by the server from the workflow and the
+    access rules, so the portals never re-implement the state machine."""
+    # Workflow steps: PATCH /claims/{id}/status with one of these statuses.
+    transitions: list[ClaimStatus] = []
+    # Case-manager overrides: the same PATCH, with a mandatory reason.
+    overrides: list[ClaimStatus] = []
+    # POST /claims/{id}/assign
+    assign: bool = False
+    # POST /claims/{id}/documents
+    upload: bool = False
+
+
 class ClaimResponse(BaseModel):
     id: uuid.UUID
     claim_number: str
@@ -42,6 +55,11 @@ class ClaimResponse(BaseModel):
     status: ClaimStatus
     assigned_to: uuid.UUID | None
     assigned_staff_name: str | None = None
+    # The policy terms at first notice of loss, and the most that may be approved under them.
+    coverage_limit: Decimal | None = None
+    deductible: Decimal | None = None
+    approval_limit: Decimal | None = None
+    allowed_actions: AllowedActions = AllowedActions()
     created_at: datetime
     updated_at: datetime
 
@@ -103,3 +121,50 @@ class StaffMember(BaseModel):
     name: str
     role: str
 
+
+
+class AgeingBucket(BaseModel):
+    label: str
+    min_days: int
+    max_days: int | None
+    count: int
+
+
+class ClosedClaim(BaseModel):
+    id: uuid.UUID
+    claim_number: str
+    policy_number: str
+    status: ClaimStatus
+    claimed_amount: Decimal
+    approved_amount: Decimal | None
+    submitted_at: datetime
+    # The claim's latest move to PAID or REJECTED in the audit trail.
+    closed_at: datetime
+    processing_days: float
+
+
+class ReportSummary(BaseModel):
+    as_of: datetime
+    total_claims: int
+    by_status: dict[ClaimStatus, int]
+    total_approved_amount: Decimal
+    total_paid_amount: Decimal
+    closed_claims: int
+    avg_processing_days: float | None
+    # Open claims by time since submission.
+    open_ageing: list[AgeingBucket]
+    recently_closed: list[ClosedClaim]
+
+
+class PolicyResponse(BaseModel):
+    """A policy as the policy system reports it (services.policy_gateway.PolicySnapshot)."""
+    policy_number: str
+    holder_name: str
+    product: str
+    insured_item: str
+    effective_from: date
+    effective_to: date
+    coverage_limit: Decimal
+    deductible: Decimal
+    # Whether it covers a loss today.
+    in_force: bool

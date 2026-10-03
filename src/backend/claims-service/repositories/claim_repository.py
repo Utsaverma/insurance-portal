@@ -18,7 +18,13 @@ class ClaimRepository:
         )
         return result.scalar_one()
 
-    async def create(self, data, customer_id: uuid.UUID) -> Claim:
+    async def create(
+        self,
+        data,
+        customer_id: uuid.UUID,
+        coverage_limit: Optional[Decimal] = None,
+        deductible: Optional[Decimal] = None,
+    ) -> Claim:
         claim_number = await self.generate_claim_number()
         claim = Claim(
             claim_number=claim_number,
@@ -27,6 +33,8 @@ class ClaimRepository:
             incident_date=data.incident_date,
             incident_description=data.incident_description,
             claimed_amount=data.claimed_amount,
+            coverage_limit=coverage_limit,
+            deductible=deductible,
             status=ClaimStatus.SUBMITTED,
         )
         self.db.add(claim)
@@ -63,11 +71,14 @@ class ClaimRepository:
         assessed_amount: Optional[Decimal] = None,
         approved_amount: Optional[Decimal] = None,
         changed_by_name: Optional[str] = None,
+        *,
+        assigned_to: Optional[uuid.UUID],
     ) -> Claim:
         old_status = claim.status
         claim.status = new_status
         claim.assessed_amount = assessed_amount
         claim.approved_amount = approved_amount
+        claim.assigned_to = assigned_to
         await self.add_history(claim.id, old_status, new_status, changed_by, note, changed_by_name)
         await self.db.flush()
         await self.db.refresh(claim)
