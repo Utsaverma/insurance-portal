@@ -146,7 +146,7 @@ insurance-portal/
 ├─ infrastructure/
 │  ├─ .env.example               # environment template; copy to infrastructure/.env
 │  ├─ docker-compose.yml         # orchestrates all 8 containers
-│  ├─ db/init.sql                # schema + seed data (users, claims, history)
+│  ├─ db/init.sql                # schema + seed data (users, claims, history); re-applied by db-migrate
 │  ├─ nginx/                     # per-portal Nginx configs (proxy + security headers)
 │  └─ smoke-test.sh              # end-to-end smoke test
 ├─ src/
@@ -205,9 +205,11 @@ Once the containers report healthy:
 | Mail (Mailpit)   | http://localhost:8025 (every notification email lands here) |
 
 > The database is seeded automatically from `infrastructure/db/init.sql` on first start: 6 users and 6 sample
-> auto claims, one per key status, each with a legal status history. `init.sql` runs only on an empty database,
-> so reset with `docker compose down -v` after changing it. To keep your data instead, re-apply it: it only adds
-> what is missing (`docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/init.sql`).
+> auto claims, one per key status, each with a legal status history. The one-shot `db-migrate` service re-applies
+> `init.sql` on every `docker compose up`, before the backends start, so a database volume from an earlier checkout
+> gains the tables and columns added since and keeps its data. It only adds what is missing: seed rows already
+> present, workflow rules you removed, and your own claims are left alone. For the seed data alone, reset with
+> `docker compose down -v`.
 
 **End-to-end walkthrough** (the demo path; `infrastructure/smoke-test.sh` automates the same journey through the API):
 1. **Customer portal**: log in as `customer@test.com` / `Test1234!` and submit a claim with a photo or police report
@@ -580,7 +582,10 @@ implementation (see `docs/sad/` for the architecture and rationale):
 
 - **A port is already in use:** set `CUSTOMER_PORTAL_PORT`, `INTERNAL_PORTAL_PORT`, `AUTH_PORT`, `CLAIMS_PORT`, `POSTGRES_PORT` or `REDIS_PORT`
   in `infrastructure/.env`.
-- **Schema or seed changes don't show up:** `init.sql` runs only on an empty database. Reset with
+- **Pages answer 500 after pulling new code:** the database schema is behind the code. `db-migrate` brings it up to
+  date on every `docker compose up`; check `docker compose logs db-migrate`. If it failed, the demo data can be
+  reset with `docker compose down -v && docker compose up --build --wait`.
+- **Seed changes don't show up:** seed claims are inserted only into an empty database. Reset with
   `docker compose down -v && docker compose up -d --wait`.
 - **Login returns 429:** login is limited to 10 attempts per minute per client; wait a minute.
 - **The claims API returns 503:** the auth service is unreachable. Check `docker compose ps` and

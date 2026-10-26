@@ -19,6 +19,31 @@ services:
       retries:  5
     restart: unless-stopped
 
+  # Re-applies db/init.sql on every start, then exits. Postgres runs it only when it creates an empty volume, so
+  # without this a volume from an earlier checkout keeps its old schema and the claims API answers 500. The file
+  # only adds what is missing, so on an up-to-date database it changes nothing.
+  db-migrate:
+    image: postgres:15-alpine
+    environment:
+      PGHOST:     postgres
+      PGUSER:     ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      PGOPTIONS:  "-c client_min_messages=warning"
+    volumes:
+      - ./db/init.sql:/init.sql:ro
+    # pg_isready over TCP: on a new volume, postgres reports healthy on its socket while the first-run setup
+    # is still going, before it accepts network connections.
+    command:
+      - sh
+      - -c
+      - |
+        for i in $$(seq 30); do pg_isready -q && break; sleep 1; done
+        exec psql -v ON_ERROR_STOP=1 -q -f /init.sql
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   redis:
     image: redis:7-alpine
     ports:
@@ -49,6 +74,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
     healthcheck:
       test:         ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval:     15s
@@ -81,6 +108,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       auth-service:
@@ -110,6 +139,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
       mail:
         condition: service_started
     restart: unless-stopped
