@@ -5,7 +5,9 @@ RUN apt-get update \
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# pip's defaults (15 s timeout, 5 retries) are too tight for a slow, VPN or WSL network: when a package's index
+# page (SQLAlchemy's is megabytes) does not arrive in time, pip reports "No matching distribution found".
+RUN pip install --no-cache-dir --default-timeout=120 --retries 10 -r requirements.txt
 COPY . .
 RUN mkdir -p /app/uploads
 VOLUME ["/app/uploads"]
