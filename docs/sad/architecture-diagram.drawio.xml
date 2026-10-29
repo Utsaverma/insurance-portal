@@ -1456,7 +1456,7 @@
     </mxGraphModel>
   </diagram>
   <diagram id="eclaims-cloud" name="Cloud / Deployment Architecture">
-    <mxGraphModel dx="1704" dy="936" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2220" pageHeight="2520" math="0" shadow="0">
+    <mxGraphModel dx="1683" dy="925" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2220" pageHeight="2520" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -1547,7 +1547,7 @@
         <mxCell id="cl-tag-g3" parent="1" style="ellipse;fillColor=#1f3b57;strokeColor=none;fontColor=#ffffff;fontSize=11;fontStyle=1;align=center;verticalAlign=middle;" value="G3" vertex="1">
           <mxGeometry height="22" width="22" x="1194" y="279" as="geometry" />
         </mxCell>
-        <mxCell id="cl-region-env" parent="1" style="shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_region;strokeColor=#00A4A6;fillColor=none;verticalAlign=top;align=left;fontSize=12;fontStyle=1;fontColor=#b85450;spacingLeft=34;spacingTop=6;html=1;" value="AWS REGION — single region, Phase 1 (region TBC — see Note 3)" vertex="1">
+        <mxCell id="cl-region-env" parent="1" style="shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_region;strokeColor=#00A4A6;fillColor=none;verticalAlign=top;align=left;fontSize=12;fontStyle=1;fontColor=#b85450;spacingLeft=34;spacingTop=6;html=1;" value="AWS REGION — us-east-1, Phase 1" vertex="1">
           <mxGeometry height="1050" width="1760" x="40" y="430" as="geometry" />
         </mxCell>
         <mxCell id="cl-vpc" parent="1" style="shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc2;strokeColor=#8C4FFF;fillColor=none;verticalAlign=top;align=left;fontSize=12;fontStyle=1;fontColor=#8C4FFF;spacingLeft=34;spacingTop=6;html=1;" value="Amazon VPC (10.0.0.0/16, illustrative CIDR)" vertex="1">
@@ -1947,7 +1947,7 @@
     </mxGraphModel>
   </diagram>
   <diagram id="eclaims-cicd" name="CI/CD Pipeline">
-    <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="1900" pageHeight="1550" math="0" shadow="0">
+    <mxGraphModel dx="1704" dy="936" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="1550" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -2011,7 +2011,7 @@
         <mxCell id="ci-grp-deploy" parent="1" style="shape=mxgraph.aws4.group;strokeColor=#C925D1;fillColor=none;verticalAlign=top;align=left;fontSize=12;fontStyle=1;fontColor=#C925D1;html=1;dashed=1;" value="STAGE 3 — DEPLOY · BLUE/GREEN (CodeDeploy)" vertex="1">
           <mxGeometry height="360" width="760" x="1010" y="470" as="geometry" />
         </mxCell>
-        <mxCell id="ci-p1" parent="1" style="rounded=0;html=1;dashed=1;dashPattern=6 6;fillColor=#fff2f0;strokeColor=#b85450;fontStyle=2;fontColor=#5b2b28;whiteSpace=wrap;" value="Source Repository — platform not specified in SAD (illustrative)" vertex="1">
+        <mxCell id="ci-p1" parent="1" style="rounded=0;html=1;dashed=1;dashPattern=6 6;fillColor=#fff2f0;strokeColor=#b85450;fontStyle=2;fontColor=#5b2b28;whiteSpace=wrap;" value="Source Repository — Github" vertex="1">
           <mxGeometry height="70" width="340" x="750" y="165" as="geometry" />
         </mxCell>
         <mxCell id="ci-p2" parent="1" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.codepipeline;fillColor=#C925D1;strokeColor=#ffffff;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;html=1;" value="AWS CodePipeline&lt;br&gt;(Release Orchestrator)" vertex="1">
