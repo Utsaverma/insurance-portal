@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net" agent="Nagarro eClaims SAD" pages="7">
   <diagram id="eclaims-context" name="System Context">
-    <mxGraphModel dx="3140" dy="2952" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1850" pageHeight="1600" math="0" shadow="0">
+    <mxGraphModel dx="2438" dy="2940" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1850" pageHeight="1600" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -118,13 +118,13 @@
         <mxCell id="ctx-extD5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#ffffff;strokeColor=#999999;fontStyle=2;" value="D5 AWS SES — Transactional Email" vertex="1">
           <mxGeometry height="64" width="340" x="1682" y="540" as="geometry" />
         </mxCell>
-        <mxCell id="ctx-extE1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#ffffff;strokeColor=#8c8c8c;fontStyle=2;" value="E1 Car-Rental Partner API — catalogue &amp; booking (deferred, SAD §10)" vertex="1">
+        <mxCell id="ctx-extE1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#ffffff;strokeColor=#8c8c8c;fontStyle=2;" value="E1 Car-Rental Partner API — catalogue &amp;amp; booking" vertex="1">
           <mxGeometry height="78" width="340" x="1682" y="631" as="geometry" />
         </mxCell>
         <mxCell id="ctx-extE2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#ffffff;strokeColor=#999999;fontStyle=2;" value="E2 Police Report &amp; Accident Photos — customer-supplied evidence" vertex="1">
           <mxGeometry height="64" width="340" x="1682" y="728" as="geometry" />
         </mxCell>
-        <mxCell id="ctx-extE3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#fff2f0;strokeColor=#b85450;fontStyle=2;" value="E3 Policy Administration System — policy, coverage &amp; policyholder record (to be confirmed)" vertex="1">
+        <mxCell id="ctx-extE3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#fff2f0;strokeColor=#b85450;fontStyle=2;" value="E3 Policy Administration System — policy, coverage &amp;amp; policyholder record" vertex="1">
           <mxGeometry height="84" width="340" x="1682" y="816" as="geometry" />
         </mxCell>
         <mxCell id="ctx-e1" edge="1" parent="1" source="ctx-a1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=12;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#1f3b57;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="ctx-ch1" value="① HTTPS / TLS 1.2+&lt;div&gt;· OAuth2 + JWT&lt;/div&gt;">
@@ -175,7 +175,7 @@
         <mxCell id="ctx-e8" edge="1" parent="1" source="ctx-sysbnd" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=12;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#1f3b57;strokeWidth=2;jumpStyle=arc;jumpSize=8;exitX=1;exitY=0.536;entryX=0;entryY=0.5;" target="ctx-extD5" value="⑭ email dispatch (HTTPS API)">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="ctx-e9" edge="1" parent="1" source="ctx-sysbnd" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=12;labelBackgroundColor=#ffffff;endArrow=open;dashed=1;strokeColor=#8c8c8c;jumpStyle=arc;jumpSize=8;exitX=1;exitY=0.653;entryX=0;entryY=0.5;" target="ctx-extE1" value="⑮ REST / JSON — deferred (SAD §10)">
+        <mxCell id="ctx-e9" edge="1" parent="1" source="ctx-sysbnd" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=12;labelBackgroundColor=#ffffff;endArrow=open;dashed=1;strokeColor=#8c8c8c;jumpStyle=arc;jumpSize=8;exitX=1;exitY=0.653;entryX=0;entryY=0.5;" target="ctx-extE1" value="⑮ REST / JSON">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="ctx-e10" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=12;labelBackgroundColor=#ffffff;endArrow=open;dashed=1;strokeColor=#8c8c8c;jumpStyle=arc;jumpSize=8;exitX=0;exitY=0.5;entryX=0.5;entryY=1;" value="">
@@ -212,13 +212,13 @@
         <mxCell id="ctx-reg-c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#c9d3dc;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=11;" value="① A1 Customer / Policyholder&lt;br&gt;② B1 Case Manager&lt;br&gt;③ B2 Surveyor&lt;br&gt;④ B3 Adjustor&lt;br&gt;⑤ B4 Auditor&lt;br&gt;⑥ B5 Regional Manager&lt;br&gt;⑦ B6 Top Management&lt;br&gt;⑧ C1 Partner Workshop&lt;br&gt;⑨ C2 Car Rental Partner&lt;br&gt;⑩ D1 Stripe&lt;br&gt;⑪ D2 Okta&lt;br&gt;⑫ D3 MongoDB Atlas&lt;br&gt;⑬ D4 AWS SNS&lt;br&gt;⑭ D5 AWS SES&lt;br&gt;⑮ E1 Car-Rental Partner API&lt;br&gt;⑯ E2 Police Report &amp; Accident Photos&lt;br&gt;⑰ E3 Policy Administration System" vertex="1">
           <mxGeometry height="396" width="340" x="40" y="1030" as="geometry" />
         </mxCell>
-        <mxCell id="ctx-reg-c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#c9d3dc;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=11;" value="status updates, SMS/email alerts, claim ID, approved amount, final bill&lt;br&gt;assigned-case notifications, reports&lt;br&gt;assignment notifications&lt;br&gt;claim / survey details for review&lt;br&gt;read-only claim &amp; processing history&lt;br&gt;region-level reports (processing time, amounts paid, claim count)&lt;br&gt;cross-region KPI dashboard, trend analysis&lt;br&gt;work-order assignment, claim approval notice, payment status&lt;br&gt;booking confirmations&lt;br&gt;tokenized payment request, disbursement instruction&lt;br&gt;authentication request&lt;br&gt;document metadata read / write&lt;br&gt;SMS dispatch request&lt;br&gt;email dispatch request&lt;br&gt;&lt;i&gt;none — deferred, Partner Portal UI used in Phase 1 (SAD §10)&lt;/i&gt;&lt;br&gt;&lt;i&gt;none — evidence, not an integration&lt;/i&gt;&lt;br&gt;&lt;i&gt;policy / coverage lookup request — to be confirmed&lt;/i&gt;" vertex="1">
+        <mxCell id="ctx-reg-c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#c9d3dc;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=11;" value="status updates, SMS/email alerts, claim ID, approved amount, final bill&lt;br&gt;assigned-case notifications, reports&lt;br&gt;assignment notifications&lt;br&gt;claim / survey details for review&lt;br&gt;read-only claim &amp;amp; processing history&lt;br&gt;region-level reports (processing time, amounts paid, claim count)&lt;br&gt;cross-region KPI dashboard, trend analysis&lt;br&gt;work-order assignment, claim approval notice, payment status&lt;br&gt;booking confirmations&lt;br&gt;tokenized payment request, disbursement instruction&lt;br&gt;authentication request&lt;br&gt;document metadata read / write&lt;br&gt;SMS dispatch request&lt;br&gt;email dispatch request&lt;br&gt;&lt;i&gt;none — deferred, Partner Portal UI used in Phase 1 (SAD §10)&lt;/i&gt;&lt;br&gt;&lt;i&gt;none — evidence, not an integration&lt;/i&gt;&lt;br&gt;&lt;i&gt;policy / coverage lookup request&lt;/i&gt;" vertex="1">
           <mxGeometry height="396" width="520" x="380" y="1030" as="geometry" />
         </mxCell>
-        <mxCell id="ctx-reg-c3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#c9d3dc;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=11;" value="claim submission, photos, police report, workshop / rental selection, payment&lt;br&gt;case assignment / delegation, overrides, report requests&lt;br&gt;field damage assessment, vehicle status updates&lt;br&gt;adjudication decision, approved / rejected amount&lt;br&gt;&lt;i&gt;none — read-only role&lt;/i&gt;&lt;br&gt;report / filter requests&lt;br&gt;dashboard filter requests&lt;br&gt;work order / estimates, repair status &amp; delivery date, final invoice&lt;br&gt;rental catalogue, booking confirmation&lt;br&gt;payment confirmation, disbursement receipt&lt;br&gt;SSO token / identity assertion&lt;br&gt;metadata query results&lt;br&gt;delivery status&lt;br&gt;delivery status&lt;br&gt;&lt;i&gt;none — deferred (SAD §10)&lt;/i&gt;&lt;br&gt;uploaded evidence files&lt;br&gt;&lt;i&gt;policy, coverage &amp; policyholder record — to be confirmed&lt;/i&gt;" vertex="1">
+        <mxCell id="ctx-reg-c3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#c9d3dc;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=11;" value="claim submission, photos, police report, workshop / rental selection, payment&lt;br&gt;case assignment / delegation, overrides, report requests&lt;br&gt;field damage assessment, vehicle status updates&lt;br&gt;adjudication decision, approved / rejected amount&lt;br&gt;&lt;i&gt;none — read-only role&lt;/i&gt;&lt;br&gt;report / filter requests&lt;br&gt;dashboard filter requests&lt;br&gt;work order / estimates, repair status &amp;amp; delivery date, final invoice&lt;br&gt;rental catalogue, booking confirmation&lt;br&gt;payment confirmation, disbursement receipt&lt;br&gt;SSO token / identity assertion&lt;br&gt;metadata query results&lt;br&gt;delivery status&lt;br&gt;delivery status&lt;br&gt;&lt;i&gt;none — deferred (SAD §10)&lt;/i&gt;&lt;br&gt;uploaded evidence files&lt;br&gt;&lt;i&gt;policy, coverage &amp;amp; policyholder record&lt;/i&gt;" vertex="1">
           <mxGeometry height="396" width="520" x="900" y="1030" as="geometry" />
         </mxCell>
-        <mxCell id="ctx-reg-c4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#c9d3dc;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=11;" value="HTTPS / TLS 1.2+ · OAuth2 + JWT · Customer Portal&lt;br&gt;HTTPS / TLS 1.2+ · Okta SSO · Internal Portal&lt;br&gt;HTTPS / TLS 1.2+ · Okta SSO · Internal Portal (mobile-responsive)&lt;br&gt;HTTPS / TLS 1.2+ · Okta SSO · Internal Portal&lt;br&gt;HTTPS / TLS 1.2+ · Okta SSO · Internal Portal&lt;br&gt;HTTPS / TLS 1.2+ · Okta SSO · Internal Portal&lt;br&gt;HTTPS / TLS 1.2+ · Okta SSO · Internal Portal&lt;br&gt;HTTPS / TLS 1.2+ · OAuth2 + JWT · Partner Portal&lt;br&gt;HTTPS / TLS 1.2+ · OAuth2 + JWT · Partner Portal&lt;br&gt;HTTPS API · PCI-DSS Level 1&lt;br&gt;SAML / OAuth2 SSO&lt;br&gt;HTTPS API / MongoDB wire protocol (TLS)&lt;br&gt;HTTPS API&lt;br&gt;HTTPS API&lt;br&gt;&lt;i&gt;REST / JSON — deferred&lt;/i&gt;&lt;br&gt;file upload (JPEG / PDF) via Customer Portal&lt;br&gt;&lt;i&gt;to be confirmed&lt;/i&gt;" vertex="1">
+        <mxCell id="ctx-reg-c4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#c9d3dc;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=11;" value="HTTPS / TLS 1.2+ · OAuth2 + JWT · Customer Portal&lt;br&gt;HTTPS / TLS 1.2+ · Okta SSO · Internal Portal&lt;br&gt;HTTPS / TLS 1.2+ · Okta SSO · Internal Portal (mobile-responsive)&lt;br&gt;HTTPS / TLS 1.2+ · Okta SSO · Internal Portal&lt;br&gt;HTTPS / TLS 1.2+ · Okta SSO · Internal Portal&lt;br&gt;HTTPS / TLS 1.2+ · Okta SSO · Internal Portal&lt;br&gt;HTTPS / TLS 1.2+ · Okta SSO · Internal Portal&lt;br&gt;HTTPS / TLS 1.2+ · OAuth2 + JWT · Partner Portal&lt;br&gt;HTTPS / TLS 1.2+ · OAuth2 + JWT · Partner Portal&lt;br&gt;HTTPS API · PCI-DSS Level 1&lt;br&gt;SAML / OAuth2 SSO&lt;br&gt;HTTPS API / MongoDB wire protocol (TLS)&lt;br&gt;HTTPS API&lt;br&gt;HTTPS API&lt;br&gt;&lt;i&gt;REST / JSON — deferred&lt;/i&gt;&lt;br&gt;file upload (JPEG / PDF) via Customer Portal" vertex="1">
           <mxGeometry height="396" width="380" x="1420" y="1030" as="geometry" />
         </mxCell>
         <mxCell id="ctx-tag-a1" parent="1" style="ellipse;fillColor=#1f3b57;strokeColor=none;fontColor=#ffffff;fontSize=11;fontStyle=1;align=center;verticalAlign=middle;" value="A1" vertex="1">
@@ -330,7 +330,7 @@
     </mxGraphModel>
   </diagram>
   <diagram id="eclaims-hld" name="High Level Solution">
-    <mxGraphModel dx="2216" dy="954" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1850" pageHeight="1560" math="0" shadow="0">
+    <mxGraphModel dx="1414" dy="777" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1850" pageHeight="1560" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -388,7 +388,7 @@
         <mxCell id="hld-s8" parent="1" style="rounded=0;html=1;fillColor=#fff2f0;strokeColor=#b85450;" value="" vertex="1">
           <mxGeometry height="18" width="22" x="1070" y="88" as="geometry" />
         </mxCell>
-        <mxCell id="hld-t8" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;" value="Assumption / TBC" vertex="1">
+        <mxCell id="hld-t8" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;" value="Assumption" vertex="1">
           <mxGeometry height="30" width="130" x="1098" y="82" as="geometry" />
         </mxCell>
         <mxCell id="hld-fl1" parent="1" style="line;strokeWidth=3;strokeColor=#4d4d4d;html=1;" value="" vertex="1">
@@ -529,7 +529,7 @@
         <mxCell id="hld-f5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#ffffff;strokeColor=#8c8c8c;fontStyle=2;" value="F5 Car-Rental Partner API (Phase 2)" vertex="1">
           <mxGeometry height="64" width="270" x="1222" y="1240" as="geometry" />
         </mxCell>
-        <mxCell id="hld-f6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#fff2f0;strokeColor=#b85450;fontStyle=2;" value="F6 YCompany Policy Administration System (to be confirmed)" vertex="1">
+        <mxCell id="hld-f6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#fff2f0;strokeColor=#b85450;fontStyle=2;" value="F6 YCompany Policy Administration System" vertex="1">
           <mxGeometry height="78" width="270" x="1510" y="1240" as="geometry" />
         </mxCell>
         <mxCell id="hld-e-flow1" edge="1" parent="1" source="hld-a1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=12;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#1f3b57;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="hld-b1" value="">
@@ -600,7 +600,7 @@
         <mxCell id="hld-e-flow11" edge="1" parent="1" source="hld-e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=12;labelBackgroundColor=#ffffff;endArrow=open;dashed=1;strokeColor=#8c8c8c;jumpStyle=arc;jumpSize=8;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" target="hld-e1" value="encryption at rest (KMS AES-256)">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="hld-e-flow7" edge="1" parent="1" source="hld-d1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#4d4d4d;jumpStyle=arc;jumpSize=8;exitX=0.669;exitY=0;" value="⑦ fan-out — auto-assign · notify · adjudicate · track repair">
+        <mxCell id="hld-e-flow7" edge="1" parent="1" source="hld-d1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#4d4d4d;jumpStyle=arc;jumpSize=8;exitX=0.669;exitY=0;" value="⑦ fan-out —· notify · adjudicate · track repair">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="1273" y="620" as="targetPoint" />
           </mxGeometry>
@@ -612,7 +612,7 @@
     </mxGraphModel>
   </diagram>
   <diagram id="eclaims-logical" name="Logical Architecture">
-    <mxGraphModel dx="4066" dy="954" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1850" pageHeight="1790" math="0" shadow="0">
+    <mxGraphModel dx="3554" dy="936" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1850" pageHeight="1790" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -790,10 +790,10 @@
         <mxCell id="lg-ext3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#ffffff;strokeColor=#999999;fontStyle=2;" value="SMS &amp; Email Delivery Providers" vertex="1">
           <mxGeometry height="68" width="184" x="-209" y="1542" as="geometry" />
         </mxCell>
-        <mxCell id="lg-ext4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#ffffff;strokeColor=#8c8c8c;fontStyle=2;" value="Car-Rental Partner System (integration deferred)" vertex="1">
+        <mxCell id="lg-ext4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#ffffff;strokeColor=#8c8c8c;fontStyle=2;" value="Car-Rental Partner System&amp;nbsp;" vertex="1">
           <mxGeometry height="68" width="184" x="-8" y="1542" as="geometry" />
         </mxCell>
-        <mxCell id="lg-ext5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#fff2f0;strokeColor=#b85450;fontStyle=2;" value="Policy Administration System (to be confirmed)" vertex="1">
+        <mxCell id="lg-ext5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fontSize=11;dashed=1;dashPattern=6 6;fillColor=#fff2f0;strokeColor=#b85450;fontStyle=2;" value="Policy Administration System" vertex="1">
           <mxGeometry height="68" width="184" x="193" y="1542" as="geometry" />
         </mxCell>
         <mxCell id="lg-cloud-out" parent="1" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=12;fontStyle=1;fontColor=#666666;" value="Internet&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;REST / JSON over HTTPS&lt;/font&gt;" vertex="1">
@@ -949,7 +949,7 @@
     </mxGraphModel>
   </diagram>
   <diagram id="eclaims-layered" name="Layered Solution Architecture">
-    <mxGraphModel dx="1437" dy="676" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1850" pageHeight="2000" math="0" shadow="0">
+    <mxGraphModel dx="1178" dy="648" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1850" pageHeight="2000" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -1456,7 +1456,7 @@
     </mxGraphModel>
   </diagram>
   <diagram id="eclaims-cloud" name="Cloud / Deployment Architecture">
-    <mxGraphModel dx="1884" dy="811" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2220" pageHeight="2520" math="0" shadow="0">
+    <mxGraphModel dx="1704" dy="936" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2220" pageHeight="2520" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -1751,10 +1751,10 @@
         <mxCell id="cl-extd5" parent="1" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ses;fillColor=#E7157B;strokeColor=#ffffff;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;html=1;" value="D5 Amazon SES (Email)" vertex="1">
           <mxGeometry height="78" width="78" x="2041" y="1020" as="geometry" />
         </mxCell>
-        <mxCell id="cl-exte1" parent="1" style="rounded=0;html=1;dashed=1;dashPattern=6 6;fillColor=#ffffff;strokeColor=#8c8c8c;fontStyle=2;whiteSpace=wrap;" value="E1 Car-Rental Partner API (deferred)" vertex="1">
+        <mxCell id="cl-exte1" parent="1" style="rounded=0;html=1;dashed=1;dashPattern=6 6;fillColor=#ffffff;strokeColor=#8c8c8c;fontStyle=2;whiteSpace=wrap;" value="E1 Car-Rental Partner API" vertex="1">
           <mxGeometry height="64" width="280" x="1940" y="1155" as="geometry" />
         </mxCell>
-        <mxCell id="cl-exte3" parent="1" style="rounded=0;html=1;dashed=1;dashPattern=6 6;fillColor=#fff2f0;strokeColor=#b85450;fontStyle=2;fontColor=#5b2b28;whiteSpace=wrap;" value="E3 Policy Admin System (TBC)" vertex="1">
+        <mxCell id="cl-exte3" parent="1" style="rounded=0;html=1;dashed=1;dashPattern=6 6;fillColor=#fff2f0;strokeColor=#b85450;fontStyle=2;fontColor=#5b2b28;whiteSpace=wrap;" value="E3 Policy Admin System" vertex="1">
           <mxGeometry height="64" width="280" x="1940" y="1290" as="geometry" />
         </mxCell>
         <mxCell id="cl-tag-d1" parent="1" style="ellipse;fillColor=#1f3b57;strokeColor=none;fontColor=#ffffff;fontSize=11;fontStyle=1;align=center;verticalAlign=middle;" value="D1" vertex="1">
@@ -1793,7 +1793,7 @@
         <mxCell id="cl-tbl-c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#c9d3dc;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=11;" value="Amazon Route 53&lt;br&gt;AWS WAF + Shield&lt;br&gt;Amazon CloudFront&lt;br&gt;Application Load Balancer&lt;br&gt;NAT Gateway&lt;br&gt;ECS Fargate Tasks&lt;br&gt;RDS PostgreSQL&lt;br&gt;ElastiCache Redis&lt;br&gt;OpenSearch&lt;br&gt;Amazon S3&lt;br&gt;Amazon EventBridge&lt;br&gt;Amazon SQS&lt;br&gt;Amazon SNS&lt;br&gt;Lambda + Step Functions&lt;br&gt;Amazon Redshift&lt;br&gt;AWS Secrets Manager&lt;br&gt;AWS KMS&lt;br&gt;AWS IAM&lt;br&gt;Amazon CloudWatch&lt;br&gt;AWS X-Ray&lt;br&gt;AWS CloudTrail&lt;br&gt;Stripe&lt;br&gt;Okta&lt;br&gt;MongoDB Atlas&lt;br&gt;Amazon SNS (SMS)&lt;br&gt;Amazon SES (Email)&lt;br&gt;Car-Rental Partner API&lt;br&gt;Policy Admin System" vertex="1">
           <mxGeometry height="650" width="430" x="190" y="1548" as="geometry" />
         </mxCell>
-        <mxCell id="cl-tbl-c3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#c9d3dc;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=11;" value="DNS resolution &amp; health-checked routing — network entry point&lt;br&gt;OWASP rule evaluation + DDoS protection at the global edge&lt;br&gt;Static + dynamic origin CDN in front of the ALB&lt;br&gt;Multi-AZ target, one per zone (A/B/C), fronts the ECS Fargate tasks&lt;br&gt;One per zone; only Zone C&#39;s is shown egressing to External SaaS — identical from any zone&lt;br&gt;Core &amp; support microservices, auto-scaling 2-100 tasks; one per zone&lt;br&gt;Primary (Zone A) / Standby synchronous replica (Zone B), Multi-AZ failover &lt;60s; Claims &amp; User DB&lt;br&gt;Primary Node (Zone A) / Replica Node (Zone B)&lt;br&gt;3-node domain for write quorum: Node 1 of 3 (Zone A) / Node 2 of 3 (Zone B) / Node 3 of 3 (Zone C)&lt;br&gt;Object storage, reached via Gateway VPC endpoint&lt;br&gt;Event bus for domain events, reached via Interface VPC endpoint&lt;br&gt;Work queues&lt;br&gt;Fan-out / pub-sub (internal, distinct from D4/D5&#39;s external last-mile hop)&lt;br&gt;Event functions &amp; orchestration (folds in AWS Step Functions)&lt;br&gt;Data warehouse&lt;br&gt;DB credentials &amp; API keys&lt;br&gt;Encryption at rest, AES-256&lt;br&gt;Global service, shown here for simplicity&lt;br&gt;Metrics &amp; dashboards&lt;br&gt;Distributed tracing&lt;br&gt;Immutable audit trail&lt;br&gt;Payment gateway, PCI-DSS Level 1&lt;br&gt;Enterprise SSO / identity provider&lt;br&gt;Managed document metadata store&lt;br&gt;SMS gateway — carrier last-mile hop&lt;br&gt;Transactional email — mail-server last-mile hop&lt;br&gt;Catalogue &amp; booking API — deferred to Phase 2 (SAD §10)&lt;br&gt;Policy, coverage &amp; policyholder lookup — to be confirmed (SAD §10)" vertex="1">
+        <mxCell id="cl-tbl-c3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#c9d3dc;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=11;" value="DNS resolution &amp;amp; health-checked routing — network entry point&lt;br&gt;OWASP rule evaluation + DDoS protection at the global edge&lt;br&gt;Static + dynamic origin CDN in front of the ALB&lt;br&gt;Multi-AZ target, one per zone (A/B/C), fronts the ECS Fargate tasks&lt;br&gt;One per zone; only Zone C&#39;s is shown egressing to External SaaS — identical from any zone&lt;br&gt;Core &amp;amp; support microservices, auto-scaling 2-100 tasks; one per zone&lt;br&gt;Primary (Zone A) / Standby synchronous replica (Zone B), Multi-AZ failover &amp;lt;60s; Claims &amp;amp; User DB&lt;br&gt;Primary Node (Zone A) / Replica Node (Zone B)&lt;br&gt;3-node domain for write quorum: Node 1 of 3 (Zone A) / Node 2 of 3 (Zone B) / Node 3 of 3 (Zone C)&lt;br&gt;Object storage, reached via Gateway VPC endpoint&lt;br&gt;Event bus for domain events, reached via Interface VPC endpoint&lt;br&gt;Work queues&lt;br&gt;Fan-out / pub-sub (internal, distinct from D4/D5&#39;s external last-mile hop)&lt;br&gt;Event functions &amp;amp; orchestration (folds in AWS Step Functions)&lt;br&gt;Data warehouse&lt;br&gt;DB credentials &amp;amp; API keys&lt;br&gt;Encryption at rest, AES-256&lt;br&gt;Global service, shown here for simplicity&lt;br&gt;Metrics &amp;amp; dashboards&lt;br&gt;Distributed tracing&lt;br&gt;Immutable audit trail&lt;br&gt;Payment gateway, PCI-DSS Level 1&lt;br&gt;Enterprise SSO / identity provider&lt;br&gt;Managed document metadata store&lt;br&gt;SMS gateway — carrier last-mile hop&lt;br&gt;Transactional email — mail-server last-mile hop&lt;br&gt;Catalogue &amp;amp; booking API&lt;br&gt;Policy, coverage &amp;amp; policyholder lookup" vertex="1">
           <mxGeometry height="650" width="1560" x="620" y="1548" as="geometry" />
         </mxCell>
         <mxCell id="cl-notes" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffdf3;strokeColor=#d6b656;fontColor=#5b4b12;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=8;" value="Notes &amp; Conventions:&lt;br&gt;1. Route 53 (G1) is the network entry point — DNS resolution and health-checked routing for every internet-facing request (SAD §4 Layer 2).&lt;br&gt;2. Every AWS component on this page and the CI/CD page uses real AWS Architecture Icons and proper AWS group containers (VPC/AZ/Subnet/Security-Group) — a departure from pages 1-4&#39;s plain colour-block convention, scoped to these two infrastructure pages only.&lt;br&gt;3. Phase 1 = single AWS Region, Multi-AZ (3 zones) only; multi-region active-active DR is Phase 2 (§10). The specific region is not stated in the case study and is shown pending confirmation.&lt;br&gt;4. This page is the deployment-topology companion to page 4 — page 4 names every AWS service per logical layer; this page places the same services on a physical VPC/AZ/subnet network map.&lt;br&gt;5. V1–V6 are tagged once, in Zone A, to avoid clutter; Zones B/C repeat the pattern untagged. Zone C&#39;s data subnet is deliberately sparser — RDS/ElastiCache Multi-AZ is a standard 2-AZ pair; only the 3-node OpenSearch domain needs a third zone for write quorum.&lt;br&gt;6. The Data Subnet reuses the Private Subnet&#39;s group-container styling — AWS&#39;s icon set has no distinct &quot;isolated subnet&quot; container; isolation is conveyed by the label, not a different icon.&lt;br&gt;7. Where two connectors cross, the crossing is drawn as an arc jump; no two connectors share a parallel route.&lt;br&gt;8. The Auth Service is grouped under Layer 2 in SAD §4 for its logical capability, but physically runs as an ECS Fargate task in the private/app subnet alongside every other microservice.&lt;br&gt;9. Every component sits behind a Security Group; one is drawn illustratively around the Zone-A Fargate icon rather than repeated on every instance.&lt;br&gt;10. AWS SNS and SES appear twice by design: N4 is the internal EventBridge-driven pub/sub; D4/D5 represent the last-mile hop out to the carrier/mail server — two different network hops through the same managed service, not a duplicate.&lt;br&gt;11. CI/CD (CodePipeline/CodeBuild/CodeDeploy/ECR, SAD §4 Layer 6/§8) has its own dedicated page (tab 6) rather than being drawn here — it&#39;s a deployment-time concern, not a runtime network path.&lt;br&gt;12. E3 (Policy Administration System) is carried through from page 1 in the same to-be-confirmed styling — this page does not resolve that open item, only shows where its traffic would enter.&lt;br&gt;13. On-diagram captions are short names only; full descriptions, zone-specific variants and protocol detail are in the registry table above, indexed by the same G/V/N/D/E tags used on the diagram.&lt;br&gt;14. External SaaS is a right-side column adjacent to Availability Zone C and sourced from Zone C&#39;s NAT Gateway (V2) for short, direct routing — egress is identical from any zone&#39;s NAT Gateway (Zone A/B not drawn), the same convention already used for the origin-fetch edge fanning to Zones B/C." vertex="1">
@@ -1947,7 +1947,7 @@
     </mxGraphModel>
   </diagram>
   <diagram id="eclaims-cicd" name="CI/CD Pipeline">
-    <mxGraphModel dx="2216" dy="954" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="1550" math="0" shadow="0">
+    <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="1900" pageHeight="1550" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -2155,7 +2155,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="ci-edge11" edge="1" parent="1" source="ci-p7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=12;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;jumpStyle=arc;jumpSize=8;strokeColor=#4d4d4d;exitX=1;exitY=0.5;entryX=0;entryY=0.3;" target="ci-p8" value="Controls weighted-target-group traffic-shift schedule">
-          <mxGeometry x="0" y="0" relative="1" as="geometry">
+          <mxGeometry relative="1" as="geometry">
             <mxPoint x="230" y="-14" as="offset" />
           </mxGeometry>
         </mxCell>
@@ -2227,7 +2227,7 @@
         <mxCell id="ci-notes" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffdf3;strokeColor=#d6b656;fontColor=#5b4b12;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=8;" value="Notes &amp; Conventions:&lt;br&gt;1. Reading order: Source (P1) → CodePipeline (P2) orchestrates three sequential stages via a shared S3 artifact bucket (P3) — Stage 1 Build (P4→P5), Stage 2 Infrastructure (P6, Terraform, manual approval gate), Stage 3 Deploy (P7, blue/green).&lt;br&gt;2. Cost framing: CodePipeline charges a small flat fee per active pipeline with no idle-time charge; CodeBuild bills only actual build-minutes — no idle build server to provision, patch or scale. Materially cheaper than a self-managed Jenkins controller running around the clock, and avoids a second CI/CD tool alongside AWS&#39;s own managed equivalents.&lt;br&gt;3. Blue/Green mechanism: Blue = current/live (P10), Green = new candidate (P11); CodeDeploy (P7) shifts ALB weighted-target-group traffic (P8) — the mechanism behind SAD §7&#39;s &quot;blue-green deployment for zero-downtime releases.&quot;&lt;br&gt;4. Rollback: A CloudWatch (R1) alarm on ECS/ALB health during the traffic shift triggers automated traffic-back-to-Blue and Green deregistration — ties to §7&#39;s Resilience/Reliability row.&lt;br&gt;5. CodeBuild appears twice (P4, P6) — two distinct projects (app build/test, Terraform plan/apply), one managed service; mirrors the Cloud/Deployment page&#39;s own SNS/SES dual-appearance note.&lt;br&gt;6. CloudWatch (R1) and Secrets Manager/KMS/IAM (Q1-Q3) also appear on the Cloud/Deployment page (N7-N10) — same services, two different lifecycle moments (steady-state runtime there, deployment-time here), not a duplicate.&lt;br&gt;7. This page is a companion to the Cloud/Deployment page — it does not redraw the VPC/AZ/subnet topology. The ECS Service/task-set icons here stand in for the same Multi-AZ Fargate runtime (V3 there); the ALB (P8) is the same Multi-AZ ALB (V1 there), not a second load balancer.&lt;br&gt;8. Q3 (IAM) is shown with no drawn edge, consistent with the Cloud/Deployment page&#39;s N9 — its role relationship applies uniformly to every pipeline stage.&lt;br&gt;9. Source Repository (P1) is rendered in the same to-be-confirmed/assumption style as the Policy Administration System (E3) on pages 1 and 5 — no source-control platform is named anywhere in the case study or SAD." vertex="1">
           <mxGeometry height="200" width="1760" x="40" y="1310" as="geometry" />
         </mxCell>
-              <mxCell id="ci-tag-p1" parent="1" style="ellipse;fillColor=#1f3b57;strokeColor=none;fontColor=#ffffff;fontSize=11;fontStyle=1;align=center;verticalAlign=middle;" value="P1" vertex="1">
+        <mxCell id="ci-tag-p1" parent="1" style="ellipse;fillColor=#1f3b57;strokeColor=none;fontColor=#ffffff;fontSize=11;fontStyle=1;align=center;verticalAlign=middle;" value="P1" vertex="1">
           <mxGeometry height="22" width="22" x="739" y="154" as="geometry" />
         </mxCell>
         <mxCell id="ci-tag-p2" parent="1" style="ellipse;fillColor=#1f3b57;strokeColor=none;fontColor=#ffffff;fontSize=11;fontStyle=1;align=center;verticalAlign=middle;" value="P2" vertex="1">
@@ -2276,7 +2276,7 @@
     </mxGraphModel>
   </diagram>
   <diagram id="eclaims-contexts" name="Bounded Contexts (Domain View)">
-    <mxGraphModel dx="1884" dy="811" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1750" pageHeight="820" math="0" shadow="0">
+    <mxGraphModel dx="1704" dy="936" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1750" pageHeight="820" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
