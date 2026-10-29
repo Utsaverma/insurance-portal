@@ -12,7 +12,7 @@
 | Project | YCompany eClaims — Claims Modernisation Programme |
 | Prepared for | YCompany (Auto Insurance) |
 | Prepared by | Utsav Verma — Senior Staff Engineer, Nagarro |
-| Version | 1.3 |
+| Version | 1.4 |
 | Status | Issued for review |
 | Date | 29 October 2026 |
 | Classification | Confidential |
@@ -27,6 +27,7 @@
 | 1.1 | 30 September 2026 | Utsav Verma | Added §9 Performance & Scalability; cloud and on-premise deployment options; application-level audit trail; role mapping; POC coverage; references to the DARs and the estimate |
 | 1.2 | 29 October 2026 | Utsav Verma | Multi-Region deployment in Phase 1: us-east-1 primary and us-east-2 warm standby; one regional ALB per Region; named Availability Zones; failover runbook and Region RTO/RPO targets |
 | 1.3 | 29 October 2026 | Utsav Verma | Removed MongoDB Atlas: document metadata moves to RDS PostgreSQL (JSONB for flexible attributes), so no data store is reached over internet egress; diagram external systems renumbered D1–D4 |
+| 1.4 | 29 October 2026 | Utsav Verma | POC coverage brought up to date: workflow rules and role permissions held in the database, notifications delivered through a transactional outbox, a policy table standing in for the Policy Administration System; the mobile app noted as outside the Phase 1 estimate; Appendix B page history corrected |
 
 ### Table of contents
 
@@ -420,8 +421,9 @@ governed claim lifecycle. The table maps each target component to its POC stand-
 | Edge — CloudFront, WAF, ALB | nginx reverse proxy per portal, with security headers |
 | Auth Service (OAuth2/JWT, Okta SSO) | `auth-service` (FastAPI): JWT access and refresh tokens, bcrypt password hashing, rate-limited login |
 | Claims Service + Workflow Engine (Step Functions) | `claims-service` (FastAPI) with an in-service, role-gated state machine — the baseline option evaluated in the Orchestration DAR |
-| User/RBAC + Configuration Service | Role checks inside the services (fixed in code for the POC; administrative configuration is the target) |
-| Notification Service (SNS/SES) | Notification hook: each status change is recorded and logged, not delivered |
+| Policy Administration System (external, E3) | A `policies` table: registration and claim submission are checked against the insured's policy, its period of cover, limit and deductible |
+| User/RBAC + Configuration Service | Workflow transitions and role permissions held in two database tables, changeable without a redeploy, with the in-code rules as the fallback; changed in SQL, with no administration screen or feature flags |
+| Notification Service (SNS/SES) | Transactional outbox: each status change writes its email and SMS events in the same transaction, and a dispatcher delivers them at least once — email to a local Mailpit inbox, SMS to the log |
 | Document Service (S3 + OpenSearch) | Type- and size-validated uploads stored on a local volume, with their metadata in PostgreSQL |
 | Cache (ElastiCache Redis) | Redis |
 | Claims DB, User DB and Document DB (RDS PostgreSQL) | One PostgreSQL instance shared by both services (POC simplification) |
@@ -435,7 +437,8 @@ These components are **not in the POC**; the architecture and the estimate cover
 - Incident Management auto-assignment
 - Fraud Detection
 - Location Service
-- the mobile app
+
+The mobile app is covered by the architecture only: it is outside Phase 1 (§10) and outside the estimate.
 
 ---
 
@@ -661,6 +664,6 @@ context to implementation detail:
 6. **CI/CD Pipeline** — the release workflow behind Layer 6's CodePipeline/CodeBuild/CodeDeploy/ECR toolchain, chosen for its fully-managed, pay-per-use cost profile over a self-run alternative like Jenkins. A source push (P1, platform not specified in the case study) triggers CodePipeline (P2) through three sequential stages — Build (P4 CodeBuild → P5 ECR), Infrastructure (P6 CodeBuild running Terraform plan/apply behind a manual approval gate), and Deploy — where CodeDeploy (P7) performs a blue/green release into the same Multi-AZ ECS Fargate service shown on page 5, shifting ALB traffic between the Blue (P10) and Green (P11) task sets and rolling back automatically on a CloudWatch alarm (R1). ECR replicates each image to us-east-2 (P12), and a cross-Region CodeDeploy action (P13) repeats the release there.
 7. **Bounded Contexts (Domain View)** — the Customer, Internal and Partner domains and the event backbone that integrates them.
 
-Pages 1–3, 5 and 6 are new additions completing the Nagarro MSAG diagram set (`requirements/MSAG-Diagram-Preparation-Guidelines-v1.1.pdf`); pages 4 and 7 are unchanged from the original two-page deliverable, only re-sequenced within the file.
+Pages 1–3, 5 and 6 are new additions completing the Nagarro MSAG diagram set (`requirements/MSAG-Diagram-Preparation-Guidelines-v1.1.pdf`); pages 4 and 7 come from the original two-page deliverable, re-sequenced within the file, and page 4 has since been revised with the rest of the set.
 
 To view or edit: open the file in the diagrams.net desktop application or at https://app.diagrams.net.
