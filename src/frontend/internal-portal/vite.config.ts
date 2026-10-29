@@ -9,11 +9,13 @@ export default defineConfig({
   },
   server: {
     port: 3001,
-    // Mirrors nginx: the API lives under /api and the prefix is stripped before reaching the service.
+    // Mirrors infrastructure/nginx/internal-portal.conf (keep the two in step): the API lives under /api and the
+    // prefix is stripped before reaching the service. A route missing here falls through to the SPA shell.
     proxy: {
       '/api/auth': { target: 'http://localhost:8001', changeOrigin: true, rewrite: (p) => p.replace(/^\/api/, '') },
       '/api/users': { target: 'http://localhost:8001', changeOrigin: true, rewrite: (p) => p.replace(/^\/api/, '') },
       '/api/claims': { target: 'http://localhost:8002', changeOrigin: true, rewrite: (p) => p.replace(/^\/api/, '') },
+      '/api/reports': { target: 'http://localhost:8002', changeOrigin: true, rewrite: (p) => p.replace(/^\/api/, '') },
     },
   },
   build: { outDir: 'dist' },

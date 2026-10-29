@@ -11,7 +11,7 @@ from slowapi.util import get_ipaddr
 
 from api.routers import auth as auth_router
 from api.routers import users as users_router
-from dependencies.db import create_tables, engine
+from dependencies.db import engine
 from logging_config import configure_logging
 
 configure_logging()
@@ -22,7 +22,8 @@ limiter = Limiter(key_func=get_ipaddr)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await create_tables()
+    # No create_all here: infrastructure/db/init.sql owns the schema. The models map only the columns this
+    # service reads, so a table created from them (policies, on a database older than ST6) is an unusable stub.
     yield
     await engine.dispose()
 

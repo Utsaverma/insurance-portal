@@ -48,13 +48,39 @@ CREATE TABLE IF NOT EXISTS claims (
   created_at           TIMESTAMPTZ DEFAULT NOW(),
   updated_at           TIMESTAMPTZ DEFAULT NOW()
 );
--- Databases created before the policy snapshot: add the columns when this file is re-applied.
+-- Databases created by an earlier version of this file: add the columns it has gained since. db-migrate in
+-- docker-compose.yml re-applies this file on every start, so an existing volume catches up with the code.
+ALTER TABLE claims ADD COLUMN IF NOT EXISTS assessed_amount NUMERIC(12,2) CHECK (assessed_amount > 0);
+ALTER TABLE claims ADD COLUMN IF NOT EXISTS approved_amount NUMERIC(12,2)
+  CHECK (approved_amount > 0 AND approved_amount <= claimed_amount);
 ALTER TABLE claims ADD COLUMN IF NOT EXISTS coverage_limit NUMERIC(12,2);
 ALTER TABLE claims ADD COLUMN IF NOT EXISTS deductible     NUMERIC(12,2);
+-- Before the claim_status type, the status was TEXT with a CHECK on the same eight values.
+DO $$ BEGIN
+  IF (SELECT data_type FROM information_schema.columns
+      WHERE table_schema = current_schema() AND table_name = 'claims' AND column_name = 'status') = 'text' THEN
+    ALTER TABLE claims DROP CONSTRAINT IF EXISTS claims_status_check;
+    ALTER TABLE claims ALTER COLUMN status DROP DEFAULT;
+    ALTER TABLE claims ALTER COLUMN status TYPE claim_status USING status::claim_status;
+    ALTER TABLE claims ALTER COLUMN status SET DEFAULT 'SUBMITTED';
+  END IF;
+END $$;
 
 -- The stand-in for the insurer's Policy Administration System (ST6). The services read it through their
 -- policy gateways, as they would call the real system's API: claims-service checks a claim against it, and
 -- auth-service checks a registration. A portal account holds a policy when its email is the holder's.
+-- auth-service used to create its two-column view of this table at startup when the table was missing (a
+-- database older than ST6). That stub holds no rows, since nothing writes to it, so replace it with the real table.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = current_schema() AND table_name = 'policies')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_schema = current_schema() AND table_name = 'policies' AND column_name = 'holder_name') THEN
+    IF NOT EXISTS (SELECT 1 FROM policies) THEN
+      DROP TABLE policies;
+    END IF;
+  END IF;
+END $$;
 CREATE TABLE IF NOT EXISTS policies (
   policy_number  TEXT PRIMARY KEY,
   holder_email   TEXT          NOT NULL,
@@ -88,6 +114,7 @@ CREATE TABLE IF NOT EXISTS claim_status_history (
   note            TEXT,
   changed_at      TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE claim_status_history ADD COLUMN IF NOT EXISTS changed_by_name TEXT;
 
 CREATE TABLE IF NOT EXISTS notifications (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -134,7 +161,10 @@ CREATE TABLE IF NOT EXISTS role_permissions (
   PRIMARY KEY (role, permission)
 );
 
-INSERT INTO workflow_transitions (from_status, role, to_status) VALUES
+-- Seeded only into an empty table: this file is re-applied on every start, and a rule an administrator
+-- removed must stay removed.
+INSERT INTO workflow_transitions (from_status, role, to_status)
+SELECT v.from_status::claim_status, v.role, v.to_status::claim_status FROM (VALUES
   ('SUBMITTED',          'CASE_MANAGER', 'ASSIGNED'),
   ('ASSIGNED',           'SURVEYOR',     'UNDER_SURVEY'),
   ('UNDER_SURVEY',       'SURVEYOR',     'SURVEYED'),
@@ -142,9 +172,11 @@ INSERT INTO workflow_transitions (from_status, role, to_status) VALUES
   ('UNDER_ADJUDICATION', 'ADJUSTOR',     'APPROVED'),
   ('UNDER_ADJUDICATION', 'ADJUSTOR',     'REJECTED'),
   ('APPROVED',           'ADJUSTOR',     'PAID')
-ON CONFLICT DO NOTHING;
+) AS v(from_status, role, to_status)
+WHERE NOT EXISTS (SELECT 1 FROM workflow_transitions);
 
-INSERT INTO role_permissions (role, permission) VALUES
+INSERT INTO role_permissions (role, permission)
+SELECT v.role, v.permission FROM (VALUES
   ('CUSTOMER',         'claims.submit'),
   ('CUSTOMER',         'documents.upload'),
   ('CASE_MANAGER',     'claims.assign'),
@@ -157,7 +189,8 @@ INSERT INTO role_permissions (role, permission) VALUES
   ('SURVEYOR',         'documents.upload'),
   ('ADJUSTOR',         'claims.work'),
   ('ADJUSTOR',         'documents.upload')
-ON CONFLICT DO NOTHING;
+) AS v(role, permission)
+WHERE NOT EXISTS (SELECT 1 FROM role_permissions);
 
 -- ─── SEED POLICIES ─────────────────────────────────────────────────────────
 -- Alice's current policy (every seeded claim is on it) and her lapsed one; and a policy whose holder, Grace,

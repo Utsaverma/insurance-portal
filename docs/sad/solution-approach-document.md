@@ -12,9 +12,9 @@
 | Project | YCompany eClaims — Claims Modernisation Programme |
 | Prepared for | YCompany (Auto Insurance) |
 | Prepared by | Utsav Verma — Senior Staff Engineer, Nagarro |
-| Version | 1.1 |
+| Version | 1.7 |
 | Status | Issued for review |
-| Date | 30 September 2026 |
+| Date | 29 October 2026 |
 | Classification | Confidential |
 | Companion artefact | `docs/sad/architecture-diagram.drawio.xml` (draw.io / diagrams.net source) |
 
@@ -25,6 +25,12 @@
 | 0.1 | 30 June 2026 | Utsav Verma | Initial draft — structure and problem framing |
 | 1.0 | 07 July 2026 | Utsav Verma | Complete architecture, NFR pull-out, technology stack, scope — issued for review |
 | 1.1 | 30 September 2026 | Utsav Verma | Added §9 Performance & Scalability; cloud and on-premise deployment options; application-level audit trail; role mapping; POC coverage; references to the DARs and the estimate |
+| 1.2 | 29 October 2026 | Utsav Verma | Multi-Region deployment in Phase 1: us-east-1 primary and us-east-2 warm standby; one regional ALB per Region; named Availability Zones; failover runbook and Region RTO/RPO targets |
+| 1.3 | 29 October 2026 | Utsav Verma | Removed MongoDB Atlas: document metadata moves to RDS PostgreSQL (JSONB for flexible attributes), so no data store is reached over internet egress; diagram external systems renumbered D1–D4 |
+| 1.4 | 29 October 2026 | Utsav Verma | POC coverage brought up to date: workflow rules and role permissions held in the database, notifications delivered through a transactional outbox, a policy table standing in for the Policy Administration System; the mobile app noted as outside the Phase 1 estimate; Appendix B page history corrected |
+| 1.5 | 29 October 2026 | Utsav Verma | Layered Solution Architecture (Appendix B, page 4) brought in line with §4, §6 and §9: every workflow step drawn; Route 53, the application audit trail, SES and the Policy Administration System added; tokens checked in each service with cached keys; uploads straight to S3; fraud scoring on `ClaimCreated`; a change-data-capture feed into Redshift |
+| 1.6 | 29 October 2026 | Utsav Verma | Region failover for workflow executions: a claim's Step Functions execution is rebuilt in the active Region on its next action, side effects run only in the active Region, failback stops superseded executions, and Step Functions quotas are sized for open claims in both Regions |
+| 1.7 | 29 October 2026 | Utsav Verma | Policy Administration System (E3) confirmed by YCompany: drawn as an external system on Appendix B pages 1–5 instead of an open item, the open-item legend entries removed, and Assumption 12 added |
 
 ### Table of contents
 
@@ -110,7 +116,7 @@ The platform is designed around a **governed claim lifecycle** (Submitted → As
 
 ## 4. Detailed Solution Architecture — Six-Layer Microservices on AWS
 
-eClaims follows a **layered, microservices reference architecture** deployed on **AWS ECS Fargate** (serverless containers) across multiple Availability Zones. The layering separates concerns cleanly, enabling independent scaling, evolution and reuse — a core YCompany design requirement. The companion diagram (`architecture-diagram.drawio.xml`) renders all six layers, the components in each, and the protocol-annotated data flows between them. The companion file also carries a System Context, a High Level Solution and a technology-agnostic Logical Architecture view ahead of this layered detail, and a Cloud / Deployment Architecture view immediately after it translating these six layers into a physical AWS network topology — VPC, Availability Zones, subnets and edge — followed by a dedicated CI/CD Pipeline view (Appendix B).
+eClaims follows a **layered, microservices reference architecture** deployed on **AWS ECS Fargate** (serverless containers) across three Availability Zones in **us-east-1**, with a warm standby in **us-east-2**. The layering separates concerns cleanly, enabling independent scaling, evolution and reuse — a core YCompany design requirement. The companion diagram (`architecture-diagram.drawio.xml`) renders all six layers, the components in each, and the protocol-annotated data flows between them. The companion file also carries a System Context, a High Level Solution and a technology-agnostic Logical Architecture view ahead of this layered detail, and a Cloud / Deployment Architecture view immediately after it translating these six layers into a physical AWS network topology — VPC, Availability Zones, subnets and edge — followed by a dedicated CI/CD Pipeline view (Appendix B).
 
 ![Logical Architecture](diagrams/Logical%20Architecture.jpg)
 
@@ -123,13 +129,13 @@ Layer 1  Client / Edge          Customer · Internal · Partner SPAs (+ Mobile, 
 Layer 2  API Gateway / Ingress  Route 53 · WAF+Shield · CloudFront · ALB · Auth (OAuth2/JWT)
 Layer 3  Microservices          Core + Support services on ECS Fargate (Multi-AZ)
 Layer 4  Async / Messaging      EventBridge · SQS · SNS · Lambda
-Layer 5  Data (Polyglot)        PostgreSQL · MongoDB · Redis · OpenSearch · S3 · Redshift
+Layer 5  Data (Polyglot)        PostgreSQL · Redis · OpenSearch · S3 · Redshift
 Layer 6  Infrastructure         IAM/SSO · KMS · CloudWatch/X-Ray · CloudTrail · CI/CD · Terraform
 ```
 
 ![Layered Solution Architecture](diagrams/Layered%20Solution%20Architecture.jpg)
 
-*Figure — Layered Solution Architecture: all six layers, their components, and protocol-annotated data flows between them (Appendix B, page 4).*
+*Figure — Layered Solution Architecture: all six layers, their components, and protocol-annotated data flows between them, with the four Section 6 workflows traced end to end (Appendix B, page 4).*
 
 ### Layer 1 — Client / Edge
 
@@ -138,10 +144,11 @@ Layer 6  Infrastructure         IAM/SSO · KMS · CloudWatch/X-Ray · CloudTrail
 
 ### Layer 2 — API Gateway / Ingress
 
-- **Amazon Route 53** — DNS resolution and health-checked routing at the entry point.
+- **Amazon Route 53** — DNS resolution at the entry point, and failover routing between the two Regions: CloudFront's origin hostname is a failover record with us-east-1 as primary and us-east-2 as secondary.
+- **Route 53 Application Recovery Controller (ARC) routing controls** — the failover runbook's switch between Regions. Its data-plane API is served from five Regions, so the switch works while us-east-1 is impaired, and a recovered us-east-1 cannot take traffic back on its own.
 - **AWS WAF + Shield** — protection against DDoS and the OWASP Top 10 at the edge.
 - **CloudFront CDN** — global caching of static assets, reducing latency and origin load.
-- **Application Load Balancer (ALB)** — Multi-AZ, health-checked routing to services.
+- **Application Load Balancer (ALB)** — one regional ALB per Region with a node in each Availability Zone; health-checked routing to services through one target group per service that spans all three zones.
 - **Auth Service (OAuth2 / JWT)** — issues short-lived access tokens (15 minutes) and refresh tokens (7 days); every downstream request is authenticated and authorised.
 
 **Why no managed API Gateway service?** The capabilities a managed API Gateway would normally provide are deliberately delivered by the components above instead of by a separate service: routing/dispatch by the **ALB**; authN/authZ by the **Auth Service** (OAuth2/JWT) plus RBAC and Okta SSO; rate limiting/throttling by **WAF + Shield**; caching by **CloudFront** (edge) and **ElastiCache Redis** (data); canary/blue-green releases by **CodePipeline + CodeDeploy** with ALB weighted target groups; circuit breaking by service-level breakers with exponential backoff; distributed tracing by **CloudWatch + X-Ray**; and request validation in-service (FastAPI + Pydantic). The one capability a managed API Gateway would add uniquely — per-API-key usage plans for metered third-party consumers — isn't required, since partners integrate through the Partner Portal rather than raw metered APIs. This mapping is also called out directly on the architecture diagram (Appendix B).
@@ -165,7 +172,7 @@ Layer 6  Infrastructure         IAM/SSO · KMS · CloudWatch/X-Ray · CloudTrail
 |---|---|
 | **Payment Service** (PCI-DSS) | Electronic payment processing via a PCI-DSS Level 1 provider (Stripe); collects customer dues and disburses to partners. |
 | **User / RBAC Service** | Manages the six roles and their permissions — **configurable without code changes**. |
-| **Document Service** | File upload/download, metadata and versioning (S3 for content, OpenSearch for search). |
+| **Document Service** | File upload/download, metadata and versioning (S3 for content, PostgreSQL for metadata, OpenSearch for search). |
 | **Location Service** | Partner workshop / car-rental lookup by zip code or geolocation. |
 | **Configuration Service** | Feature flags and role-permission configuration, enabling behavioural change without redeployment. |
 
@@ -186,11 +193,13 @@ A **polyglot persistence** strategy uses the right store for each job:
 |---|---|---|
 | **Claims DB** | RDS PostgreSQL (Multi-AZ) | Primary transactional store for claims and lifecycle history. |
 | **User DB** | RDS PostgreSQL (Multi-AZ) | Identity, roles and permissions. |
-| **Document DB** | MongoDB Atlas | Rich, flexible document metadata and queries. |
+| **Document DB** | RDS PostgreSQL (Multi-AZ) | Document metadata, versions and SHA-256 digests; JSONB columns for flexible, evolving attributes. |
 | **Cache** | ElastiCache Redis | Session and claim-status caching for sub-100 ms reads. |
 | **Search** | OpenSearch | Full-text document search and workshop geo-search. |
 | **Object Storage** | Amazon S3 | Accident photos, PDFs and work orders — versioned and encrypted. |
 | **Data Warehouse** | Amazon Redshift | Analytics, management reporting and fraud analytics. |
+
+Document metadata deliberately stays in PostgreSQL rather than in a separate document database. JSONB covers the flexible attributes and OpenSearch handles full-text search, so a third-party document store would add a vendor, an internet-egress path and its own multi-Region cluster without adding a capability.
 
 ### Layer 6 — Infrastructure / Platform (Cross-Cutting)
 
@@ -208,25 +217,57 @@ These platform services govern **every layer above** and provide the non-functio
 ### Deployment Topology
 
 The diagram's fifth page, **Cloud / Deployment Architecture** (`eclaims-cloud`), translates the six
-logical layers above into a physical AWS network topology for **Phase 1: a single AWS Region,
-Multi-AZ** (multi-region active-active is a Phase 2 item, §10). Inbound traffic resolves through
-**Amazon Route 53** (**G1**) and passes through a global edge tier outside the Region — **G2** AWS
-WAF + Shield and **G3** CloudFront — before entering one **Amazon VPC** spread across three
-Availability Zones. Each zone repeats the same three-subnet pattern: a public subnet holding the
-Multi-AZ Application Load Balancer target (**V1**) and a NAT Gateway (**V2**); a private/app subnet
-running the ECS Fargate service tasks (**V3**) — every microservice from Layer 3, including the Auth
-Service that Layer 2 groups logically at the edge; and an isolated data subnet with no direct route to
-the internet, holding RDS PostgreSQL primary/standby (**V4**), ElastiCache Redis (**V5**) and a
-three-node OpenSearch domain (**V6**) for write quorum. AWS-managed, serverless services from Layers
-4–6 — EventBridge, SQS, SNS, Lambda, Step Functions, S3, Redshift, Secrets Manager, KMS, IAM,
-CloudWatch, X-Ray and CloudTrail (**N1–N12**) — sit outside the VPC's subnets, reached through VPC
-endpoints. Only the NAT Gateways carry egress to the external SaaS providers already introduced on
-page 1 (**D1–D5**, **E1**, and the still-unconfirmed Policy Administration System, **E3**). The
+logical layers above into a physical AWS network topology for **Phase 1: two AWS Regions, each
+Multi-AZ**. **us-east-1** (N. Virginia) is the primary Region and serves all traffic; **us-east-2**
+(Ohio) is a warm standby that runs the same stack at minimum capacity. Multi-Region active-active
+remains out of scope (§10). Inbound traffic resolves through **Amazon Route 53** (**G1**) and passes
+through a global edge tier outside any Region — **G2** AWS WAF + Shield and **G3** CloudFront.
+CloudFront's origin hostname is a Route 53 failover record whose health checks follow **Route 53 ARC
+routing controls** (**G4**), so traffic reaches us-east-2 only when the failover runbook switches
+Regions. In us-east-1, one **Amazon VPC** spans three Availability Zones, us-east-1a, us-east-1b and
+us-east-1c. A single regional Application Load Balancer (**V1**) places a node in each zone's public
+subnet and reaches the ECS Fargate service tasks (**V3**) in all three zones through one target
+group per service. Each zone repeats the same three-subnet pattern: a public subnet holding a NAT
+Gateway (**V2**); a private/app subnet running the Fargate tasks — every microservice from Layer 3,
+including the Auth Service that Layer 2 groups logically at the edge; and an isolated data subnet
+with no direct route to the internet, holding RDS PostgreSQL primary/standby (**V4**), ElastiCache
+Redis (**V5**) and a three-node OpenSearch domain (**V6**) for write quorum. AWS-managed, serverless
+services from Layers 4–6 — EventBridge, SQS, SNS, Lambda, Step Functions, S3, Redshift, Secrets
+Manager, KMS, IAM, CloudWatch, X-Ray and CloudTrail (**N1–N12**) — sit outside the VPC's subnets,
+reached through VPC endpoints. Only the NAT Gateways carry egress to the external systems already
+introduced on page 1 (**D1–D4**, **E1**, and YCompany's Policy Administration System, **E3**). The
 release workflow that deploys into this runtime is detailed separately on page 6 (below).
+
+us-east-2 repeats the pattern in compact form: its own VPC across us-east-2a, us-east-2b and
+us-east-2c, a regional ALB (**V1′**), NAT Gateways (**V2′**) and Fargate tasks held at minimum
+capacity (**V3′**). Data reaches it through each service's managed cross-Region feature: an
+asynchronous RDS cross-Region read replica (**V4′**), OpenSearch cross-cluster replication to a
+follower domain (**V6′**) over inter-Region VPC peering, S3 Cross-Region Replication including the
+Object Lock audit archive (**N1′**), Secrets Manager replica secrets (**N7′**) and us-east-2 KMS
+keys (**N8′**). ElastiCache (**V5′**) is not replicated and starts cold. On a us-east-1 outage the
+on-call runs a pre-approved, game-day-tested runbook: promote the replica and its secret, pre-scale
+the standby services, then flip the routing controls so Route 53 answers with V1′. CloudWatch alarms
+page the on-call but never move traffic, and a recovered us-east-1 cannot take traffic back while
+its control is off, which prevents split-brain. Failback is the same runbook in reverse, after
+re-seeding us-east-1. us-east-2 also holds SES production access, SNS SMS registration, partner
+allow-lists for its NAT addresses and raised Fargate quotas, so it can take full load. Messages
+queued and workflow steps running in us-east-1 at the moment of failure are not replicated; the
+runbook re-drives the affected claims from their status in the database and from the transactional
+outbox. Step Functions executions are regional and are not replicated either, so the runbook does
+not recreate the roughly one million open claim executions (§9.1) up front. Instead, each claim
+records the execution that owns it. When the next action on a claim finds that execution in the
+other Region, the Workflow Engine starts a new execution in the active Region at the claim's current
+status, with the action in its input, so the action completes in the same request. Phase 1 has no
+escalation timers, so a claim that nobody acts on needs no execution until somebody does. Every task
+with a side effect (assignment, notification, payment and the outbox dispatcher) first checks the
+ARC routing-control state (**G4**) and acts only in the active Region, so a recovering us-east-1
+cannot resume a stranded step and repeat it. Failback applies the same rule in the other direction,
+and a background job then stops the executions that a rebuild has superseded. The Region-failure
+targets are in §7.
 
 ![Cloud / Deployment Architecture](diagrams/Cloud%20_%20Deployment%20Architecture.jpg)
 
-*Figure — Cloud / Deployment Architecture: the Phase 1 single-Region, Multi-AZ AWS network topology (Appendix B, page 5).*
+*Figure — Cloud / Deployment Architecture: the Phase 1 two-Region topology, us-east-1 primary and us-east-2 warm standby, each Multi-AZ (Appendix B, page 5).*
 
 ### CI/CD Pipeline
 
@@ -241,7 +282,9 @@ plan`/`apply` behind a manual approval gate), and **Stage 3 Deploy**, where **Co
 provisions a Green Fargate task set (**P11**) alongside the current Blue set (**P10**) on the same ECS
 Service (**P9**) shown on the Cloud/Deployment page, shifting ALB traffic (**P8**) gradually and
 rolling back automatically on a CloudWatch (**R1**) health alarm — the mechanism behind the
-zero-downtime NFR in §7.
+zero-downtime NFR in §7. ECR replicates every image to us-east-2 (**P12**), Terraform applies both
+Regions' stacks, and once the us-east-1 deploy succeeds a cross-Region CodeDeploy action (**P13**)
+runs the same blue/green release into the us-east-2 standby, so both Regions run the same image.
 
 ![CI/CD Pipeline](diagrams/CI_CD%20Pipeline.jpg)
 
@@ -266,7 +309,6 @@ compute and Camunda for workflow.
 | Workflow | AWS Step Functions | Camunda Platform 8 (self-managed) |
 | Event bus and queues | EventBridge · SQS · SNS | Apache Kafka or RabbitMQ |
 | Relational data | RDS PostgreSQL (Multi-AZ) | PostgreSQL with Patroni high availability |
-| Document metadata | MongoDB Atlas | MongoDB Enterprise (self-managed) |
 | Cache | ElastiCache Redis | Redis (Sentinel or Cluster) |
 | Search | Amazon OpenSearch Service | OpenSearch (self-managed) |
 | Object storage | Amazon S3 (versioning, Object Lock) | MinIO (S3-compatible, object locking) |
@@ -306,7 +348,7 @@ Access for every role is enforced by the **User / RBAC Service** and is **config
 
 ## 6. Key Workflows
 
-The four workflows below trace a claim through its full lifecycle. Each numbered step names the acting party and — where relevant — the event that fires. Notifications are omitted from individual steps for brevity but are raised on **every** status change. Each workflow is colour-coded on the architecture diagram's data-flow arrows (Appendix B) so it can be traced visually end to end.
+The four workflows below trace a claim through its full lifecycle. Each numbered step names the acting party and — where relevant — the event that fires. Notifications are omitted from individual steps for brevity but are raised on **every** status change. Each workflow is colour-coded on the data-flow arrows of the Layered Solution Architecture page (Appendix B, page 4); a hop that several workflows share is drawn in grey with their numbers on its label, so each workflow can be traced visually end to end.
 
 ### Workflow 1 — Claim Submission & Assignment
 
@@ -345,15 +387,15 @@ The four workflows below trace a claim through its full lifecycle. Each numbered
 
 | NFR | Requirement | Implementation in eClaims |
 |---|---|---|
-| **Availability** | 24×7 operation; system restarts itself on any crash | Multi-AZ ECS across 3 zones; container health checks every 5 s with automatic restart; RDS Multi-AZ failover in under 60 s |
+| **Availability** | 24×7 operation; system restarts itself on any crash | Multi-AZ ECS across 3 zones; container health checks every 5 s with automatic restart; RDS Multi-AZ failover in under 60 s; a warm standby in us-east-2 takes over if us-east-1 fails |
 | **Scalability** | Handle 200M+ customers and future growth; auto-scale to demand | ECS target-tracking auto-scaling (minimum 2 tasks per service across AZs; maximum sized from the workload model, ceiling 100); read replicas, RDS Proxy and table partitioning; SQS buffering; Redis caching — see §9 |
 | **Performance** | 99% of services complete in **< 5,000 ms**, peak and non-peak | Redis L1 cache; CloudFront edge cache; connection pooling; query indexing; slow work kept off the request path (asynchronous integrations, direct-to-S3 uploads, asynchronous reports); continuous P50/P95/P99 latency monitoring; latency budget and load-test gates in §9 |
 | **Security** | OWASP Top 10; encryption of sensitive data; RBAC | WAF + Shield; OAuth2 + JWT; RBAC at every layer; KMS AES-256 at rest; TLS 1.2+ in transit; PCI-DSS for payments; full audit trail |
-| **Resilience / Reliability** | Self-healing; no single point of failure | Circuit breakers and exponential-backoff retries; blue-green deployment; RTO < 15 min, RPO < 5 min for an Availability Zone failure (cross-region recovery is a Phase 2 item) |
+| **Resilience / Reliability** | Self-healing; no single point of failure | Circuit breakers and exponential-backoff retries; blue-green deployment; RTO < 15 min, RPO < 5 min for an Availability Zone failure; for a Region failure, RTO < 30 min and RPO < 5 min for the database (< 15 min for S3 objects), given a pre-approved, game-day-tested runbook and pre-raised us-east-2 quotas; the Region RTO covers actions on existing claims too: each claim's workflow execution is rebuilt in us-east-2 on its first action after failover, which makes that one action slightly slower (§4, Deployment Topology), and a change made within the RPO window before the failure is lost and has to be re-entered |
 | **Observability** | Enough logging to debug any error; SLA monitoring | Structured JSON logs → CloudWatch; X-Ray distributed tracing; CloudTrail audit; custom KPI metrics and automated SLA alerts |
 | **Flexibility / Deployability** | No code changes for role config; on-premise **and** cloud | Configuration & RBAC services for administrative role changes; container images plus an on-premise profile on Kubernetes with a portable equivalent for each managed service (§4, Deployment Options); Terraform for every environment |
 | **Compliance / Non-Repudiation** | Audit trail; no repudiation; guard against fraud | Append-only, hash-chained application audit trail archived with S3 Object Lock (WORM); SHA-256 digest of every claim document recorded at upload; CloudTrail for infrastructure audit; rule-based (then ML) fraud detection; every communication archived |
-| **Data management** | Store, back up and recover in a distributed environment | Multi-AZ RDS with automated backups and point-in-time recovery; S3 cross-region replication; versioned object storage |
+| **Data management** | Store, back up and recover in a distributed environment | Multi-AZ RDS with automated backups and point-in-time recovery; RDS cross-Region read replica and OpenSearch cross-cluster replication to us-east-2; S3 Cross-Region Replication; versioned object storage; reporting warehouse restored from cross-Region snapshot copies |
 | **Maintainability** | Testability, configurability, upgradeability | Independently deployable services; automated test suites; blue-green upgrades; feature flags |
 
 ---
@@ -365,8 +407,7 @@ The four workflows below trace a claim through its full lifecycle. Each numbered
 | Backend API | Python **FastAPI** | Async, high performance, automatic OpenAPI generation, strong typing via Pydantic |
 | Data access | **SQLAlchemy 2.0 (async)** with **Alembic** migrations | Typed async ORM over PostgreSQL; versioned, reviewable schema migrations per service (the POC seeds its schema from SQL scripts) |
 | Frontend | **React 18 + TypeScript + Vite** | Component reuse across the three portals, strong ecosystem, type safety |
-| Primary database | **PostgreSQL 15** (RDS Multi-AZ) | ACID guarantees for relational claims data, mature, AWS-managed |
-| Document database | **MongoDB Atlas** | Flexible schema and rich metadata queries for claim documents |
+| Primary database | **PostgreSQL 15** (RDS Multi-AZ) | ACID guarantees for relational claims data; JSONB columns for flexible document metadata; mature, AWS-managed |
 | Cache | **Redis 7** (ElastiCache) | Sub-millisecond session and claim-status caching |
 | Search | **OpenSearch** | Full-text document search and geo-search for workshops |
 | Object storage | **Amazon S3** | Virtually unlimited scale, 11-nines durability, native encryption |
@@ -393,11 +434,12 @@ governed claim lifecycle. The table maps each target component to its POC stand-
 | Edge — CloudFront, WAF, ALB | nginx reverse proxy per portal, with security headers |
 | Auth Service (OAuth2/JWT, Okta SSO) | `auth-service` (FastAPI): JWT access and refresh tokens, bcrypt password hashing, rate-limited login |
 | Claims Service + Workflow Engine (Step Functions) | `claims-service` (FastAPI) with an in-service, role-gated state machine — the baseline option evaluated in the Orchestration DAR |
-| User/RBAC + Configuration Service | Role checks inside the services (fixed in code for the POC; administrative configuration is the target) |
-| Notification Service (SNS/SES) | Notification hook: each status change is recorded and logged, not delivered |
-| Document Service (S3 + OpenSearch) | Type- and size-validated uploads stored on a local volume |
+| Policy Administration System (external, E3) | A `policies` table: registration and claim submission are checked against the insured's policy, its period of cover, limit and deductible |
+| User/RBAC + Configuration Service | Workflow transitions and role permissions held in two database tables, changeable without a redeploy, with the in-code rules as the fallback; changed in SQL, with no administration screen or feature flags |
+| Notification Service (SNS/SES) | Transactional outbox: each status change writes its email and SMS events in the same transaction, and a dispatcher delivers them at least once — email to a local Mailpit inbox, SMS to the log |
+| Document Service (S3 + OpenSearch) | Type- and size-validated uploads stored on a local volume, with their metadata in PostgreSQL |
 | Cache (ElastiCache Redis) | Redis |
-| Claims DB and User DB (RDS PostgreSQL) | One PostgreSQL instance shared by both services (POC simplification) |
+| Claims DB, User DB and Document DB (RDS PostgreSQL) | One PostgreSQL instance shared by both services (POC simplification) |
 | Reporting Service + Redshift | Reports page in the Internal Portal |
 | Observability (CloudWatch, X-Ray) | Structured JSON logs with request-ID correlation across services |
 | ECS Fargate, CI/CD, Terraform | Docker Compose |
@@ -408,7 +450,8 @@ These components are **not in the POC**; the architecture and the estimate cover
 - Incident Management auto-assignment
 - Fraud Detection
 - Location Service
-- the mobile app
+
+The mobile app is covered by the architecture only: it is outside Phase 1 (§10) and outside the estimate.
 
 ---
 
@@ -479,8 +522,9 @@ Six design rules keep the 99th percentile inside the budget:
 | Edge | CloudFront caches the portals' static assets globally; WAF rate-based rules shed abusive traffic | Managed by AWS |
 | Microservices (ECS Fargate) | Stateless tasks behind the ALB with target-tracking auto-scaling | CPU at 60% or ALB requests per target. Minimum 2 tasks per service across AZs; maximum per service from §9.4 (ceiling 100). Cool-downs: 60 s scale-out, 300 s scale-in. Scheduled pre-scaling for known peaks; a catastrophe runbook for manual pre-scaling |
 | Asynchronous processing (SQS consumers, Lambda) | Scales on queue depth; SQS absorbs bursts so API latency is unaffected | Age of oldest message > 60 s; dead-letter queues for poison messages |
+| Workflow orchestration (Step Functions) | One Standard execution per open claim; short-lived sub-flows as Express Workflows | Open-execution quota raised to about 3 million per Region in both Regions, against ≈1.0 million open claims (§9.1), a catastrophe week and superseded executions awaiting clean-up; us-east-2 StartExecution, task-callback and state-transition rates raised to us-east-1's before go-live; throttling alarmed in CloudWatch |
 | Cache (ElastiCache Redis) | Cluster mode with replicas | Memory > 70% or CPU > 60% |
-| Transactional database (RDS PostgreSQL, Multi-AZ) | Vertical scaling for writes; read replicas for queues and status reads; RDS Proxy pools connections as tasks scale out; monthly partitions for status history and communications; claims partitioned by creation month beyond 100 million rows | Replica lag < 1 s; CPU < 70% |
+| Transactional database (RDS PostgreSQL, Multi-AZ) | Vertical scaling for writes; read replicas for queues and status reads; RDS Proxy pools connections as tasks scale out; monthly partitions for status history, communications and document metadata; claims partitioned by creation month beyond 100 million rows | Replica lag < 1 s; CPU < 70% |
 | Search (OpenSearch) | Add data nodes; index lifecycle management | JVM memory pressure, storage |
 | Object storage (S3) | Unlimited. Lifecycle tiering: Standard → Standard-IA after 90 days → Glacier Deep Archive one year after claim closure. Object Lock for retention | — |
 | Analytics (Redshift) | Change-data-capture feed from the transactional store (a CQRS read model); concurrency scaling for month-end reporting | Queue wait time |
@@ -539,11 +583,12 @@ Load testing is part of the Testing phase in the estimate.
 - Role-based reporting (Case Manager, Regional Manager, Top Management)
 - Electronic payment (Stripe integration)
 - AWS cloud deployment; on-premise deployment profile designed (§4, Deployment Options)
+- Multi-Region warm standby: us-east-1 primary, us-east-2 standby (§4, Deployment Topology)
 
 ### Out of scope (Phase 1)
 
 - Native mobile app (iOS/Android) — web-first, with mobile-responsive design in scope
-- Multi-region active-active deployment — the architecture supports it; not implemented in Phase 1
+- Multi-Region active-active deployment — Phase 1 runs us-east-2 as a warm standby that takes traffic only after failover
 - ML-based fraud detection — a rule-based engine ships in Phase 1; the ML model is a Phase 2 item
 - Multi-language support — English only, per the requirements
 - Car-rental integration API — the UI is present; the third-party integration is deferred
@@ -562,6 +607,7 @@ Load testing is part of the Testing phase in the estimate.
 9. The *Incident Manager* named in the case study is fulfilled by the **Case Manager** role; a dedicated role can be configured if required.
 10. Phase 1 is delivered on AWS. The on-premise profile (§4, Deployment Options) is designed but implemented only if YCompany mandates on-premise hosting; that implementation is not part of the Phase 1 estimate.
 11. The workload figures in §9.1 are planning assumptions (6% annual claim frequency, ≈30-day claim lifecycle), to be validated against YCompany's claims data.
+12. YCompany has confirmed its **Policy Administration System** (E3) as the source of policy, coverage and policyholder records. Registration (Assumption 2), claim submission and adjudication are checked against it.
 
 ---
 
@@ -625,14 +671,14 @@ The full architecture is provided as an editable draw.io / diagrams.net source f
 `docs/sad/architecture-diagram.drawio.xml`. It contains seven pages, reading top-down from business
 context to implementation detail:
 
-1. **System Context** — eClaims drawn as a single black box against every actor and external system that touches it (MSAG "System Model — functional aspect"). Actors are tagged A1 (Customer) and B1–B6 (the six internal roles), C1–C2 (partners); external systems are tagged D1–D5 (Stripe, Okta, MongoDB Atlas, SNS, SES) and E1–E3 (the deferred car-rental API, customer-supplied evidence, and the open Policy Administration System item). An interaction register beneath the diagram tags each of the 17 flows with what crosses the boundary and over which channel/protocol, cross-referenced to §3, §5, §6 and §8.
+1. **System Context** — eClaims drawn as a single black box against every actor and external system that touches it (MSAG "System Model — functional aspect"). Actors are tagged A1 (Customer) and B1–B6 (the six internal roles), C1–C2 (partners); external systems are tagged D1–D4 (Stripe, Okta, SNS, SES) and E1–E3 (the deferred car-rental API, customer-supplied evidence, and YCompany's Policy Administration System). An interaction register beneath the diagram tags each of the 16 flows with what crosses the boundary and over which channel/protocol, cross-referenced to §3, §5, §6 and §8.
 2. **High Level Solution** — a single compact one-page view of the entire solution (MSAG "Solution diagram"), aimed at senior stakeholders. Bands A–F run top to bottom (Users, Channels, Secure Edge, Business Capabilities C1–C6, Event Backbone, Information & Cloud Platform E1–E8, External Systems F1–F6), with the end-to-end claim flow numbered ①–⑩ directly on the edges and walked in prose in the notes panel.
 3. **Logical Architecture** — a technology-agnostic, layered view (MSAG "Application / Component Logical Architecture") naming roles rather than products, so it applies equally to the cloud or on-premise deployment option (§7). Functional modules are tagged M1–M12 and cross-cutting concerns X1–X12, drawn once in a dedicated right-hand column. See page 4 for the concrete technology mapping of every role shown here.
-4. **Layered Solution Architecture** — the six layers as horizontal swim-lanes, every component labelled and colour-coded by layer, with directional data flows annotated by protocol (HTTPS/TLS, OAuth2/JWT, EventBridge/SQS/SNS, SQL, S3 API). Data-flow arrows for the four Section 6 workflows (Claim Submission & Assignment, Survey & Adjudication, Repair Tracking & Payment, Reporting) are colour-coded per workflow with a dedicated Flow Legend, so each business flow can be traced independently of the shared platform/infrastructure flows (shown in grey). The page also carries a capability-mapping callout explaining the Layer 2 API-Gateway design decision (§4) and the standard component-type legend.
-5. **Cloud / Deployment Architecture** — the AWS network-topology realisation of the six layers above (MSAG "System Model — Technical aspect": deployment type, network type, data transmission), for the Phase 1 single-Region, Multi-AZ footprint (§10). Every component is drawn with real AWS Architecture Icons inside proper AWS group containers (Region/VPC/AZ/Subnet/Security-Group) rather than this file's usual plain colour blocks — scoped to this page and page 6 only. Amazon Route 53 (G1) fronts a global edge tier (G2 WAF + Shield, G3 CloudFront) ahead of one VPC spread across three Availability Zones, each repeating a public/private/data three-subnet pattern tagged V1–V6 (ALB target, NAT Gateway, ECS Fargate tasks, RDS Multi-AZ, ElastiCache Redis, OpenSearch); AWS-managed services reached via VPC endpoints are tagged N1–N12; the same external SaaS providers as page 1 are tagged D1–D5/E1, with the open Policy Administration System item (E3) carried through in the same to-be-confirmed styling.
-6. **CI/CD Pipeline** — the release workflow behind Layer 6's CodePipeline/CodeBuild/CodeDeploy/ECR toolchain, chosen for its fully-managed, pay-per-use cost profile over a self-run alternative like Jenkins. A source push (P1, platform not specified in the case study) triggers CodePipeline (P2) through three sequential stages — Build (P4 CodeBuild → P5 ECR), Infrastructure (P6 CodeBuild running Terraform plan/apply behind a manual approval gate), and Deploy — where CodeDeploy (P7) performs a blue/green release into the same Multi-AZ ECS Fargate service shown on page 5, shifting ALB traffic between the Blue (P10) and Green (P11) task sets and rolling back automatically on a CloudWatch alarm (R1).
+4. **Layered Solution Architecture** — the six layers as horizontal swim-lanes, every component labelled and colour-coded by layer, with directional data flows annotated by protocol or event (HTTPS/TLS, OAuth2/JWT, EventBridge/SQS/SNS/SES, SQL, S3 API). Every step of the four Section 6 workflows (Claim Submission & Assignment, Survey & Adjudication, Repair Tracking & Payment, Reporting) is drawn: an arrow that belongs to one workflow takes that workflow's colour, and an arrow several workflows share is drawn in dark grey with their numbers (①–④) on its label, so each business flow can be traced end to end; cross-cutting platform links are dashed grey. The page also shows the direct-to-S3 upload path and asynchronous reporting from §9.2, the domain event each service publishes, the change-data-capture feed into Redshift, and YCompany's Policy Administration System (E3), together with a capability-mapping callout explaining the Layer 2 API-Gateway design decision (§4) and the standard component-type legend.
+5. **Cloud / Deployment Architecture** — the AWS network-topology realisation of the six layers above (MSAG "System Model — Technical aspect": deployment type, network type, data transmission), for the Phase 1 footprint: us-east-1 primary and us-east-2 warm standby, each Multi-AZ (§10). Every component is drawn with real AWS Architecture Icons inside proper AWS group containers (Region/VPC/AZ/Subnet/Security-Group) rather than this file's usual plain colour blocks — scoped to this page and page 6 only. Amazon Route 53 (G1) fronts a global edge tier (G2 WAF + Shield, G3 CloudFront, G4 ARC routing controls) ahead of a us-east-1 VPC spread across us-east-1a/1b/1c, with one regional ALB (V1) drawn as a band across the zones and each zone repeating a public/private/data three-subnet pattern tagged V2–V6 (NAT Gateway, ECS Fargate tasks, RDS Multi-AZ, ElastiCache Redis, OpenSearch); us-east-2 repeats the pattern in compact form (V1′–V6′, N1′, N7′, N8′), linked to us-east-1 by the cross-Region replication edges; AWS-managed services reached via VPC endpoints are tagged N1–N12; the same external systems as page 1 are tagged D1–D4, E1 and E3 (YCompany's Policy Administration System).
+6. **CI/CD Pipeline** — the release workflow behind Layer 6's CodePipeline/CodeBuild/CodeDeploy/ECR toolchain, chosen for its fully-managed, pay-per-use cost profile over a self-run alternative like Jenkins. A source push (P1, platform not specified in the case study) triggers CodePipeline (P2) through three sequential stages — Build (P4 CodeBuild → P5 ECR), Infrastructure (P6 CodeBuild running Terraform plan/apply behind a manual approval gate), and Deploy — where CodeDeploy (P7) performs a blue/green release into the same Multi-AZ ECS Fargate service shown on page 5, shifting ALB traffic between the Blue (P10) and Green (P11) task sets and rolling back automatically on a CloudWatch alarm (R1). ECR replicates each image to us-east-2 (P12), and a cross-Region CodeDeploy action (P13) repeats the release there.
 7. **Bounded Contexts (Domain View)** — the Customer, Internal and Partner domains and the event backbone that integrates them.
 
-Pages 1–3, 5 and 6 are new additions completing the Nagarro MSAG diagram set (`requirements/MSAG-Diagram-Preparation-Guidelines-v1.1.pdf`); pages 4 and 7 are unchanged from the original two-page deliverable, only re-sequenced within the file.
+Pages 1–3, 5 and 6 are new additions completing the Nagarro MSAG diagram set (`requirements/MSAG-Diagram-Preparation-Guidelines-v1.1.pdf`); pages 4 and 7 come from the original two-page deliverable, re-sequenced within the file, and page 4 has since been revised with the rest of the set.
 
 To view or edit: open the file in the diagrams.net desktop application or at https://app.diagrams.net.
