@@ -12,7 +12,7 @@
 | Project | YCompany eClaims — Claims Modernisation Programme |
 | Prepared for | YCompany (Auto Insurance) |
 | Prepared by | Utsav Verma — Senior Staff Engineer, Nagarro |
-| Version | 1.4 |
+| Version | 1.6 |
 | Status | Issued for review |
 | Date | 29 October 2026 |
 | Classification | Confidential |
@@ -29,6 +29,7 @@
 | 1.3 | 29 October 2026 | Utsav Verma | Removed MongoDB Atlas: document metadata moves to RDS PostgreSQL (JSONB for flexible attributes), so no data store is reached over internet egress; diagram external systems renumbered D1–D4 |
 | 1.4 | 29 October 2026 | Utsav Verma | POC coverage brought up to date: workflow rules and role permissions held in the database, notifications delivered through a transactional outbox, a policy table standing in for the Policy Administration System; the mobile app noted as outside the Phase 1 estimate; Appendix B page history corrected |
 | 1.5 | 29 October 2026 | Utsav Verma | Layered Solution Architecture (Appendix B, page 4) brought in line with §4, §6 and §9: every workflow step drawn; Route 53, the application audit trail, SES and the Policy Administration System added; tokens checked in each service with cached keys; uploads straight to S3; fraud scoring on `ClaimCreated`; a change-data-capture feed into Redshift |
+| 1.6 | 29 October 2026 | Utsav Verma | Region failover for workflow executions: a claim's Step Functions execution is rebuilt in the active Region on its next action, side effects run only in the active Region, failback stops superseded executions, and Step Functions quotas are sized for open claims in both Regions |
 
 ### Table of contents
 
@@ -250,8 +251,19 @@ page the on-call but never move traffic, and a recovered us-east-1 cannot take t
 its control is off, which prevents split-brain. Failback is the same runbook in reverse, after
 re-seeding us-east-1. us-east-2 also holds SES production access, SNS SMS registration, partner
 allow-lists for its NAT addresses and raised Fargate quotas, so it can take full load. Messages
-queued in us-east-1 at the moment of failure are not replicated; the runbook re-drives the affected
-claims from their status in the database. The Region-failure targets are in §7.
+queued and workflow steps running in us-east-1 at the moment of failure are not replicated; the
+runbook re-drives the affected claims from their status in the database and from the transactional
+outbox. Step Functions executions are regional and are not replicated either, so the runbook does
+not recreate the roughly one million open claim executions (§9.1) up front. Instead, each claim
+records the execution that owns it. When the next action on a claim finds that execution in the
+other Region, the Workflow Engine starts a new execution in the active Region at the claim's current
+status, with the action in its input, so the action completes in the same request. Phase 1 has no
+escalation timers, so a claim that nobody acts on needs no execution until somebody does. Every task
+with a side effect (assignment, notification, payment and the outbox dispatcher) first checks the
+ARC routing-control state (**G4**) and acts only in the active Region, so a recovering us-east-1
+cannot resume a stranded step and repeat it. Failback applies the same rule in the other direction,
+and a background job then stops the executions that a rebuild has superseded. The Region-failure
+targets are in §7.
 
 ![Cloud / Deployment Architecture](diagrams/Cloud%20_%20Deployment%20Architecture.jpg)
 
@@ -379,7 +391,7 @@ The four workflows below trace a claim through its full lifecycle. Each numbered
 | **Scalability** | Handle 200M+ customers and future growth; auto-scale to demand | ECS target-tracking auto-scaling (minimum 2 tasks per service across AZs; maximum sized from the workload model, ceiling 100); read replicas, RDS Proxy and table partitioning; SQS buffering; Redis caching — see §9 |
 | **Performance** | 99% of services complete in **< 5,000 ms**, peak and non-peak | Redis L1 cache; CloudFront edge cache; connection pooling; query indexing; slow work kept off the request path (asynchronous integrations, direct-to-S3 uploads, asynchronous reports); continuous P50/P95/P99 latency monitoring; latency budget and load-test gates in §9 |
 | **Security** | OWASP Top 10; encryption of sensitive data; RBAC | WAF + Shield; OAuth2 + JWT; RBAC at every layer; KMS AES-256 at rest; TLS 1.2+ in transit; PCI-DSS for payments; full audit trail |
-| **Resilience / Reliability** | Self-healing; no single point of failure | Circuit breakers and exponential-backoff retries; blue-green deployment; RTO < 15 min, RPO < 5 min for an Availability Zone failure; for a Region failure, RTO < 30 min and RPO < 5 min for the database (< 15 min for S3 objects), given a pre-approved, game-day-tested runbook and pre-raised us-east-2 quotas |
+| **Resilience / Reliability** | Self-healing; no single point of failure | Circuit breakers and exponential-backoff retries; blue-green deployment; RTO < 15 min, RPO < 5 min for an Availability Zone failure; for a Region failure, RTO < 30 min and RPO < 5 min for the database (< 15 min for S3 objects), given a pre-approved, game-day-tested runbook and pre-raised us-east-2 quotas; the Region RTO covers actions on existing claims too: each claim's workflow execution is rebuilt in us-east-2 on its first action after failover, which makes that one action slightly slower (§4, Deployment Topology), and a change made within the RPO window before the failure is lost and has to be re-entered |
 | **Observability** | Enough logging to debug any error; SLA monitoring | Structured JSON logs → CloudWatch; X-Ray distributed tracing; CloudTrail audit; custom KPI metrics and automated SLA alerts |
 | **Flexibility / Deployability** | No code changes for role config; on-premise **and** cloud | Configuration & RBAC services for administrative role changes; container images plus an on-premise profile on Kubernetes with a portable equivalent for each managed service (§4, Deployment Options); Terraform for every environment |
 | **Compliance / Non-Repudiation** | Audit trail; no repudiation; guard against fraud | Append-only, hash-chained application audit trail archived with S3 Object Lock (WORM); SHA-256 digest of every claim document recorded at upload; CloudTrail for infrastructure audit; rule-based (then ML) fraud detection; every communication archived |
@@ -510,6 +522,7 @@ Six design rules keep the 99th percentile inside the budget:
 | Edge | CloudFront caches the portals' static assets globally; WAF rate-based rules shed abusive traffic | Managed by AWS |
 | Microservices (ECS Fargate) | Stateless tasks behind the ALB with target-tracking auto-scaling | CPU at 60% or ALB requests per target. Minimum 2 tasks per service across AZs; maximum per service from §9.4 (ceiling 100). Cool-downs: 60 s scale-out, 300 s scale-in. Scheduled pre-scaling for known peaks; a catastrophe runbook for manual pre-scaling |
 | Asynchronous processing (SQS consumers, Lambda) | Scales on queue depth; SQS absorbs bursts so API latency is unaffected | Age of oldest message > 60 s; dead-letter queues for poison messages |
+| Workflow orchestration (Step Functions) | One Standard execution per open claim; short-lived sub-flows as Express Workflows | Open-execution quota raised to about 3 million per Region in both Regions, against ≈1.0 million open claims (§9.1), a catastrophe week and superseded executions awaiting clean-up; us-east-2 StartExecution, task-callback and state-transition rates raised to us-east-1's before go-live; throttling alarmed in CloudWatch |
 | Cache (ElastiCache Redis) | Cluster mode with replicas | Memory > 70% or CPU > 60% |
 | Transactional database (RDS PostgreSQL, Multi-AZ) | Vertical scaling for writes; read replicas for queues and status reads; RDS Proxy pools connections as tasks scale out; monthly partitions for status history, communications and document metadata; claims partitioned by creation month beyond 100 million rows | Replica lag < 1 s; CPU < 70% |
 | Search (OpenSearch) | Add data nodes; index lifecycle management | JVM memory pressure, storage |
