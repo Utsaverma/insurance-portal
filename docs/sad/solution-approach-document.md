@@ -12,9 +12,9 @@
 | Project | YCompany eClaims — Claims Modernisation Programme |
 | Prepared for | YCompany (Auto Insurance) |
 | Prepared by | Utsav Verma — Senior Staff Engineer, Nagarro |
-| Version | 1.7 |
+| Version | 1.8 |
 | Status | Issued for review |
-| Date | 29 October 2026 |
+| Date | 30 October 2026 |
 | Classification | Confidential |
 | Companion artefact | `docs/sad/architecture-diagram.drawio.xml` (draw.io / diagrams.net source) |
 
@@ -31,6 +31,7 @@
 | 1.5 | 29 October 2026 | Utsav Verma | Layered Solution Architecture (Appendix B, page 4) brought in line with §4, §6 and §9: every workflow step drawn; Route 53, the application audit trail, SES and the Policy Administration System added; tokens checked in each service with cached keys; uploads straight to S3; fraud scoring on `ClaimCreated`; a change-data-capture feed into Redshift |
 | 1.6 | 29 October 2026 | Utsav Verma | Region failover for workflow executions: a claim's Step Functions execution is rebuilt in the active Region on its next action, side effects run only in the active Region, failback stops superseded executions, and Step Functions quotas are sized for open claims in both Regions |
 | 1.7 | 29 October 2026 | Utsav Verma | Policy Administration System (E3) confirmed by YCompany: drawn as an external system on Appendix B pages 1–5 instead of an open item, the open-item legend entries removed, and Assumption 12 added |
+| 1.8 | 30 October 2026 | Utsav Verma | References: the Container Orchestrator DAR (Amazon ECS vs Amazon EKS) is folded into the Compute DAR, which now covers both the compute model and the orchestrator; the Messaging, Analytics and Identity DAR and the Document Management DAR added |
 
 ### Table of contents
 
@@ -626,9 +627,10 @@ Load testing is part of the Testing phase in the estimate.
 | 7 | PCI-DSS Compliance | https://www.pcisecuritystandards.org/ |
 | 8 | DAR — Workflow Orchestration Engine | `docs/dar/Utsav_eClaims_DAR_Orchestration_Engine.docx` |
 | 9 | DAR — Backend Framework | `docs/dar/Utsav_eClaims_DAR_Backend.docx` |
-| 10 | DAR — Compute Platform | `docs/dar/Utsav_eClaims_DAR_Compute.docx` |
-| 11 | DAR — Container Orchestrator (Amazon ECS vs Amazon EKS) | `docs/dar/Utsav_eClaims_DAR_ECS_vs_EKS.docx` |
-| 12 | Effort estimate, schedule and resource plan | `docs/estimation/Utsav_eClaims_Estimates.xlsm` |
+| 10 | DAR — Compute Platform and Container Orchestrator (including Amazon ECS vs Amazon EKS) | `docs/dar/Utsav_eClaims_DAR_Compute.docx` |
+| 11 | DAR — Messaging, Analytics and Identity | `docs/dar/Utsav_eClaims_DAR_Messaging_Analytics_Identity.docx` |
+| 12 | DAR — Document Management | `docs/dar/Utsav_eClaims_DAR_Document_Management.docx` |
+| 13 | Effort estimate, schedule and resource plan | `docs/estimation/Utsav_eClaims_Estimates.xlsm` |
 
 ### Appendix A — Requirements Traceability Matrix
 
