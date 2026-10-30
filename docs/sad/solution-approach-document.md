@@ -600,8 +600,10 @@ These components are **not in the POC**; the architecture and the estimate cover
 - Incident Management auto-assignment
 - Fraud Detection
 - Location Service
+- Repair & Work Order Service
+- Booking Service
 
-Also not in the POC: the Repair & Work Order Service and the Booking Service, added in v1.9 and not yet shown as separate services in the estimate; and the mobile app, which is in Phase 1 but not yet in the estimate (§10, Assumption 13).
+Also not in the POC: the mobile app, which is in Phase 1 but not yet in the estimate (§10, Assumption 13).
 
 ---
 
