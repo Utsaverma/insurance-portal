@@ -604,8 +604,8 @@ Decision records and the estimate:
 The architecture deliverables live in `docs/sad/`:
 
 - `solution-approach-document.md` — the full Solution Approach Document (SAD)
-- `architecture-diagram.drawio.xml` — the seven-page companion diagram set (draw.io / diagrams.net
+- `architecture-diagram.drawio.xml` — the eight-page companion diagram set (draw.io / diagrams.net
   source)
 - `diagrams/` — exported JPEG renders of each diagram page (Bounded Contexts, System Context,
   High Level Solution, Logical Architecture, Layered Solution Architecture, Cloud/Deployment
-  Architecture, CI/CD Pipeline)
+  Architecture, CI/CD Pipeline, On-Premise Deployment Architecture)

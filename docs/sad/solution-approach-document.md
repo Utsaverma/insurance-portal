@@ -12,11 +12,11 @@
 | Project | YCompany eClaims — Claims Modernisation Programme |
 | Prepared for | YCompany (Auto Insurance) |
 | Prepared by | Utsav Verma — Senior Staff Engineer, Nagarro |
-| Version | 1.9 |
+| Version | 2.0 |
 | Status | Issued for review |
 | Date | 30 October 2026 |
 | Classification | Confidential |
-| Companion artefact | `docs/sad/architecture-diagram.drawio.xml` (draw.io / diagrams.net source) |
+| Companion artefact | `docs/sad/architecture-diagram.drawio.xml` (draw.io / diagrams.net source); Visio export `docs/sad/architecture-diagram.vsdx` |
 
 ### Revision history
 
@@ -33,6 +33,7 @@
 | 1.7 | 29 October 2026 | Utsav Verma | Policy Administration System (E3) confirmed by YCompany: drawn as an external system on Appendix B pages 1–5 instead of an open item, the open-item legend entries removed, and Assumption 12 added |
 | 1.8 | 30 October 2026 | Utsav Verma | References: the Container Orchestrator DAR (Amazon ECS vs Amazon EKS) is folded into the Compute DAR, which now covers both the compute model and the orchestrator; the Messaging, Analytics and Identity DAR and the Document Management DAR added |
 | 1.9 | 30 October 2026 | Utsav Verma | Gaps closed across the SAD and every page of Appendix B: payments with a Payment DB, Stripe's hosted payment page, webhooks and Stripe Connect payouts to workshops and customers; fraud flags with a Fraud Review hold; Policy Administration System checks at registration, submission, adjudication and rental booking, and profile changes passed to it; the communications archive; document validation and the claim–document link; new Repair & Work Order and Booking services; a database per service behind RDS Proxy, an in-Region read replica and a separate audit store; the transactional outbox, dead-letter queues and an event catalogue; zero-ETL into Redshift; EventBridge Scheduler for SLA and ageing alerts; the extended claim lifecycle and a report catalogue; the mobile app moved into Phase 1 (not yet in the estimate); environments, security scans, k6 and synthetic canaries in CI/CD |
+| 2.0 | 30 October 2026 | Utsav Verma | Requirement gaps closed: the Surveyor assigned where the vehicle will be repaired; the rental opened on drop-off, extended with the delivery date and paid to the rental partner; Information Requested and Disputed states, settlement acceptance and click-to-sign; two-way claim messages, all archived; total-loss and theft paths (Workflow 6); premium payment; ISO ClaimSearch; ledger postings; the region hierarchy; data protection and regulatory compliance; interface standards and versioning; the partner API designed for Phase 2; Direct Connect to YCompany's data centre; four database instance groups; Shield Advanced and a corporate-only Internal Portal; an on-premise deployment view (Appendix B, page 8) and a Visio export |
 
 ### Table of contents
 
@@ -54,7 +55,7 @@
 
 YCompany is a leading United States auto-insurance provider serving more than **200 million customers**. While the company sells policies through fully electronic, well-organised channels, its **claims processing remains manual and paper-driven**. The result is long settlement cycles, payments issued by cheque, no way for customers to track a claim, no electronic collaboration with repair workshops, and no analytical visibility for management. Competitors that already offer faster settlement and continuous status updates are eroding YCompany's market position and customer confidence.
 
-**eClaims** is the proposed modernisation: a cloud-native, microservices-based platform that digitises the **entire motor-claim lifecycle end to end** — from first notification of loss, through survey and adjudication, to repair tracking and electronic payment — and opens it up to every party in the process through three purpose-built portals and a mobile app:
+**eClaims** is the proposed modernisation: a cloud-native, microservices-based platform that digitises the **entire motor-claim lifecycle end to end** — from first notification of loss, through survey and adjudication, to repair tracking or settlement and electronic payment — and opens it up to every party in the process through three purpose-built portals and a mobile app:
 
 - a **Customer Portal** for policyholders to file and track claims, choose a workshop, book a rental, and pay electronically;
 - an **Internal Portal** for the six claims-processing roles (Case Manager, Surveyor, Adjustor, Auditor, Regional Manager, Top Management);
@@ -98,10 +99,10 @@ eClaims is delivered as a set of loosely-coupled, independently-deployable servi
 
 | # | Capability | What it provides |
 |---|---|---|
-| 1 | **Customer Portal** (web) and **Mobile App** (iOS/Android) | Self-service claim submission with photos and police report; real-time status tracking; partner-workshop lookup and appointment booking; rental-vehicle selection; document upload; electronic payment of dues; profile changes (correspondence address and billing cycle, held in YCompany's Policy Administration System). |
-| 2 | **Internal Portal** | Role-based workbench for all six internal roles — case assignment and delegation, field survey submission (also from the mobile app, offline), adjudication against policy coverage, fraud review, read-only audit access, and role-scoped reporting — plus an administration console for role permissions, workflow and fraud rules, SLA thresholds and the partner directory. |
-| 3 | **Partner Portal** | Workshop and authorised-service-station login to receive appointments, upload work orders and estimates, push repair-status and delivery-date updates, submit the final bill, and track payment status; car-rental partners publish their catalogue and confirm bookings. |
-| 4 | **Notification Engine** | SMS, email and push alerts to customers and concerned parties on **every claim status change**, and SLA alerts to staff when a claim exceeds its time-to-resolve threshold; all communications archived for audit and compliance. |
+| 1 | **Customer Portal** (web) and **Mobile App** (iOS/Android) | Self-service claim submission with photos and police report; real-time status tracking; partner-workshop lookup and appointment booking; rental-vehicle selection; document upload; electronic payment of dues; profile changes (correspondence address and billing cycle, held in YCompany's Policy Administration System); premium payment; accepting a cash settlement or disputing a decision, signed electronically; and messages with the assigned staff. |
+| 2 | **Internal Portal** | Role-based workbench for all six internal roles — case assignment and delegation, field survey submission (also from the mobile app, offline), adjudication against policy coverage, fraud review, requests to the customer for missing information, dispute review, read-only audit access, and role-scoped reporting — plus an administration console for role permissions, workflow and fraud rules, SLA thresholds and the partner directory. |
+| 3 | **Partner Portal** | Workshop and authorised-service-station login to receive appointments, confirm when the vehicle is received and handed back, upload work orders and estimates, push repair-status and delivery-date updates, submit the final bill, and track payment status; car-rental partners publish their catalogue, confirm and extend bookings, submit rental invoices and track their payouts. |
+| 4 | **Notification Engine** | SMS, email and push alerts to customers and concerned parties on **every claim status change**, and SLA alerts to staff when a claim exceeds its time-to-resolve threshold; each claim's message thread between the customer and the assigned staff, with email replies received too; every message in and out archived for audit and compliance. |
 | 5 | **Reporting Module** | Role-based reports — claims processed by role, processing time, ageing matrix for long-pending claims, fraud reports, and cross-region management KPIs (report catalogue in §6). |
 | 6 | **Document Management** | A central, versioned archive of every claim document and communication, retained for auditing and compliance; every upload validated and malware-scanned before it joins its claim. |
 
@@ -113,13 +114,13 @@ eClaims is delivered as a set of loosely-coupled, independently-deployable servi
 
 *Figure — High Level Solution: a single compact view of the entire solution, with the end-to-end claim flow numbered on the edges (Appendix B, page 2).*
 
-The platform is designed around a **governed claim lifecycle** (Submitted → Assigned → Under Survey → Surveyed → Under Adjudication → Approved / Rejected → In Repair → Invoiced → Paid → Closed), where each transition is permitted only for the correct role and only from a valid preceding state. Three further states handle exceptions: **Fraud Review**, a hold that any open claim can enter when a fraud flag is raised; **Withdrawn**, chosen by the customer before approval; and **Reopened**, set by the Case Manager to send a closed claim back to adjudication. A repair at an external workshop goes from Approved straight to Invoiced when the customer uploads the workshop's invoice. Every transition raises a domain **event**, which in turn drives notifications, downstream processing and the analytics feed — the mechanism that makes the whole process transparent and near-real-time.
+The platform is designed around a **governed claim lifecycle** (Submitted → Assigned → Under Survey → Surveyed → Under Adjudication → Approved / Rejected → In Repair → Invoiced → Paid → Closed), where each transition is permitted only for the correct role and only from a valid preceding state. Five further states handle exceptions: **Fraud Review**, a hold that any open claim can enter when a fraud flag is raised; **Information Requested**, a hold that any assignee can place on an open claim to ask the customer for a document or detail, which pauses the claim's SLA clock until the customer answers and the claim resumes where it stopped; **Disputed**, which the customer can choose within 30 days (configurable) of an approval or a rejection, and which the Case Manager resolves by sending the claim back to Under Adjudication or by upholding the decision; **Withdrawn**, chosen by the customer before approval; and **Reopened**, set by the Case Manager to send a closed claim back to adjudication. The **claim type** selects the path. A repair at a partner workshop runs the full lifecycle. A repair at an external workshop goes from Approved straight to Invoiced when the customer uploads the workshop's invoice. A **total loss**, declared when the assessed repair cost exceeds a configured share of the vehicle's value, and a **theft**, which has no survey, go from Approved to Paid. A cash settlement (external workshop, total loss, theft) is paid only after the customer accepts it with an electronic signature, and a rejected claim closes when its dispute window ends. Every transition raises a domain **event**, which in turn drives notifications, downstream processing and the analytics feed — the mechanism that makes the whole process transparent and near-real-time.
 
 ---
 
 ## 4. Detailed Solution Architecture — Six-Layer Microservices on AWS
 
-eClaims follows a **layered, microservices reference architecture** deployed on **AWS ECS Fargate** (serverless containers) across three Availability Zones in **us-east-1**, with a warm standby in **us-east-2**. The layering separates concerns cleanly, enabling independent scaling, evolution and reuse — a core YCompany design requirement. The companion diagram (`architecture-diagram.drawio.xml`) renders all six layers, the components in each, and the protocol-annotated data flows between them. The companion file also carries a System Context, a High Level Solution and a technology-agnostic Logical Architecture view ahead of this layered detail, and a Cloud / Deployment Architecture view immediately after it translating these six layers into a physical AWS network topology — VPC, Availability Zones, subnets and edge — followed by a dedicated CI/CD Pipeline view (Appendix B).
+eClaims follows a **layered, microservices reference architecture** deployed on **AWS ECS Fargate** (serverless containers) across three Availability Zones in **us-east-1**, with a warm standby in **us-east-2**. The layering separates concerns cleanly, enabling independent scaling, evolution and reuse — a core YCompany design requirement. The companion diagram (`architecture-diagram.drawio.xml`) renders all six layers, the components in each, and the protocol-annotated data flows between them. The companion file also carries a System Context, a High Level Solution and a technology-agnostic Logical Architecture view ahead of this layered detail, and a Cloud / Deployment Architecture view immediately after it translating these six layers into a physical AWS network topology — VPC, Availability Zones, subnets and edge — followed by a dedicated CI/CD Pipeline view, and an On-Premise Deployment view for the on-premise profile (Appendix B).
 
 ![Logical Architecture](diagrams/Logical%20Architecture.jpg)
 
@@ -129,32 +130,32 @@ eClaims follows a **layered, microservices reference architecture** deployed on 
 
 ```
 Layer 1  Client / Edge          Customer · Internal · Partner SPAs · Mobile App (iOS/Android)
-Layer 2  API Gateway / Ingress  Route 53 + ARC · WAF+Shield · CloudFront · ALB · Auth (OAuth2/JWT)
+Layer 2  API Gateway / Ingress  Route 53 + ARC · WAF + Shield Advanced · CloudFront · ALB · Auth (OAuth2/JWT)
 Layer 3  Microservices          Core + Support services on ECS Fargate (Multi-AZ)
 Layer 4  Async / Messaging      Outbox relay · EventBridge · SQS (+DLQs) · SNS · EventBridge Scheduler · Lambda
-Layer 5  Data (Polyglot)        PostgreSQL per service (RDS Proxy) · Redis · OpenSearch · S3 · Redshift (zero-ETL)
-Layer 6  Infrastructure         IAM/SSO · KMS · Audit trail · CloudWatch/X-Ray/Synthetics · CloudTrail · GuardDuty · CI/CD · Terraform
+Layer 5  Data (Polyglot)        PostgreSQL per service, 4 instance groups (RDS Proxy) · Redis · OpenSearch · S3 · Redshift (zero-ETL)
+Layer 6  Infrastructure         IAM/SSO · KMS · Audit trail · CloudWatch/X-Ray/Synthetics · CloudTrail · GuardDuty · Direct Connect · CI/CD · Terraform
 ```
 
 ![Layered Solution Architecture](diagrams/Layered%20Solution%20Architecture.jpg)
 
-*Figure — Layered Solution Architecture: all six layers, their components, and protocol-annotated data flows between them, with the five Section 6 workflows traced end to end (Appendix B, page 4).*
+*Figure — Layered Solution Architecture: all six layers, their components, and protocol-annotated data flows between them, with the six Section 6 workflows traced end to end (Appendix B, page 4).*
 
 ### Layer 1 — Client / Edge
 
-- **React web portals**, delivered as three separate single-page applications (SPAs) — Customer, Internal and Partner — that share a common component library for consistency and reuse. The Internal Portal includes the administration console, and all three are built responsive (mobile-first).
-- **Mobile App (iOS/Android), Phase 1:** one **React Native** app with role-based screens. Customers file and track claims, upload photos, book workshops and rentals, pay and change their profile; surveyors capture field assessments offline — drafts and photos are kept encrypted on the device and synchronised with an idempotent submission when the connection returns. Staff sign in with Okta through the Auth Service. The app calls the same APIs as the web portals, uploads straight to S3, and receives push notifications through Amazon SNS mobile push (APNs and FCM). It is in Phase 1 scope but not yet in the effort estimate (§10, Assumption 13).
+- **React web portals**, delivered as three separate single-page applications (SPAs) — Customer, Internal and Partner — that share a common component library for consistency and reuse. The Internal Portal includes the administration console, and all three are built responsive (mobile-first). An open claim page refreshes the claim's status from the cached status endpoint every 30 seconds, so the customer sees a change without reloading; the app also gets a push notification. Customers sign their claim declaration and accept a cash settlement in the portal or the app (*Information requests, disputes and electronic signature*, below).
+- **Mobile App (iOS/Android), Phase 1:** one **React Native** app with role-based screens. Customers file and track claims, upload photos, book workshops and rentals, pay and change their profile; surveyors capture field assessments offline — drafts and photos are kept encrypted on the device and synchronised with an idempotent submission when the connection returns. Staff sign in with Okta through the Auth Service, on a managed device only (Okta device assurance). The app calls the same APIs as the web portals, uploads straight to S3, and receives push notifications through Amazon SNS mobile push (APNs and FCM). It is in Phase 1 scope but not yet in the effort estimate (§10, Assumption 13).
 
 ### Layer 2 — API Gateway / Ingress
 
 - **Amazon Route 53** — DNS resolution at the entry point, and failover routing between the two Regions: CloudFront's origin hostname is a failover record with us-east-1 as primary and us-east-2 as secondary.
 - **Route 53 Application Recovery Controller (ARC) routing controls** — the failover runbook's switch between Regions. Its data-plane API is served from five Regions, so the switch works while us-east-1 is impaired, and a recovered us-east-1 cannot take traffic back on its own.
-- **AWS WAF + Shield** — protection against DDoS and the OWASP Top 10 at the edge, with AWS WAF account takeover prevention on the sign-in endpoints.
+- **AWS WAF + Shield Advanced** — protection against DDoS and the OWASP Top 10 at the edge, with AWS WAF account takeover prevention on the sign-in endpoints. Shield Advanced adds the AWS Shield Response Team, DDoS cost protection and health-based detection. A WAF rule admits the Internal Portal's hostname only from YCompany's corporate address ranges (offices and VPN).
 - **CloudFront CDN** — global caching with two origins: an S3 bucket holding the three portals' static files, reached through origin access control, and the regional ALB for API calls.
-- **Application Load Balancer (ALB)** — one regional ALB per Region with a node in each Availability Zone; health-checked routing to services through one target group per service that spans all three zones. It accepts traffic only from CloudFront (the CloudFront managed prefix list in its security group, plus a secret origin header), so WAF cannot be bypassed. Routes: `/auth`, `/users`, `/admin`, `/claims`, `/assignments`, `/documents`, `/locations`, `/bookings`, `/repairs`, `/payments` (including Stripe's `/payments/webhooks`) and `/reports`.
-- **Auth Service (OAuth2 / JWT)** — issues short-lived access tokens (15 minutes) and refresh tokens (7 days); every downstream request is authenticated and authorised. Customers register with their policy number, checked against the Policy Administration System (E3); customers and partners use MFA; staff are federated from Okta (Messaging, Analytics and Identity DAR).
+- **Application Load Balancer (ALB)** — one regional ALB per Region with a node in each Availability Zone; health-checked routing to services through one target group per service that spans all three zones. It accepts traffic only from CloudFront (the CloudFront managed prefix list in its security group, plus a secret origin header), so WAF cannot be bypassed. Routes: `/auth`, `/users`, `/admin`, `/claims`, `/assignments`, `/documents`, `/locations`, `/bookings`, `/repairs`, `/payments` (including Stripe's `/payments/webhooks`), `/messages` and `/reports`.
+- **Auth Service (OAuth2 / JWT)** — issues short-lived access tokens (15 minutes) and refresh tokens (7 days); every downstream request is authenticated and authorised. Customers register with their policy number, checked against the Policy Administration System (E3); customers and partners use MFA; staff are federated from Okta, which starts a staff session only on a device YCompany manages (Okta device assurance; Messaging, Analytics and Identity DAR).
 
-**Why no managed API Gateway service?** The capabilities a managed API Gateway would normally provide are deliberately delivered by the components above instead of by a separate service: routing/dispatch by the **ALB**; authN/authZ by the **Auth Service** (OAuth2/JWT) plus RBAC and Okta SSO; rate limiting/throttling by **WAF + Shield**; caching by **CloudFront** (edge) and **ElastiCache Redis** (data); canary/blue-green releases by **CodePipeline + CodeDeploy** with ALB weighted target groups; circuit breaking by service-level breakers with exponential backoff; distributed tracing by **CloudWatch + X-Ray**; and request validation in-service (FastAPI + Pydantic). The one capability a managed API Gateway would add uniquely — per-API-key usage plans for metered third-party consumers — isn't required, since partners integrate through the Partner Portal rather than raw metered APIs. This mapping is also called out directly on the architecture diagram (Appendix B).
+**Why no managed API Gateway service?** The capabilities a managed API Gateway would normally provide are deliberately delivered by the components above instead of by a separate service: routing/dispatch by the **ALB**; authN/authZ by the **Auth Service** (OAuth2/JWT) plus RBAC and Okta SSO; rate limiting/throttling by **WAF + Shield**; caching by **CloudFront** (edge) and **ElastiCache Redis** (data); canary/blue-green releases by **CodePipeline + CodeDeploy** with ALB weighted target groups; circuit breaking by service-level breakers with exponential backoff; distributed tracing by **CloudWatch + X-Ray**; and request validation in-service (FastAPI + Pydantic). The one capability a managed API Gateway would add uniquely — per-client usage plans for machine consumers — isn't required in Phase 1, since partners use the Partner Portal. The partner API planned for Phase 2 (*Partner integration (Phase 2)*, below) brings machine clients with their own credentials and rate limits; Amazon API Gateway is reconsidered for that API alone when it is built, in front of the same services. This mapping is also called out directly on the architecture diagram (Appendix B).
 
 ### Layer 3 — Microservices (ECS Fargate, Multi-AZ)
 
@@ -162,31 +163,32 @@ Layer 6  Infrastructure         IAM/SSO · KMS · Audit trail · CloudWatch/X-Ra
 
 | Service | Responsibility |
 |---|---|
-| **Claims Service** (FastAPI) | Create / read / update claims; enforces the claim **state machine** and ownership rules with the role permissions it reads from the Configuration Service. Checks the policy with the Policy Administration System (E3) at first notice of loss and the cover again at adjudication. Owns the Claims DB — claims, status history, assignments, the policy snapshot, the fraud hold and the claim's workflow execution — and records assignment, document, repair, invoice, payment and fraud events against the claim. |
-| **Incident Management Service** | Auto-assigns Case Manager, Surveyor and Adjustor from the staff roster and availability (User / RBAC Service), surveyor field-office coverage (Location Service) and current workload (Claims read replica); supports delegation by the Case Manager; publishes `ClaimAssigned`. |
-| **Workflow Engine** | Orchestrates the claim lifecycle on **AWS Step Functions** — one execution per open claim, started at first notice of loss — for durable, auditable state, with workflow rules from the Configuration Service. |
-| **Repair & Work Order Service** | Owns the Repair DB: work orders and estimates, repair status, expected delivery dates and final invoices from partner workshops, and invoices from external workshops that the customer uploads. Publishes `WorkOrderUploaded`, `RepairStatusUpdated`, `DeliveryDateChanged` and `InvoiceSubmitted`. |
-| **Booking Service** | Owns the Booking DB: workshop appointments and rental bookings. Sends the workshop the initial accident details with each appointment (`AppointmentBooked`); checks rental eligibility against the policy cover in E3 and books the rental through the Partner Portal in Phase 1, the car-rental API later (`RentalBooked`). |
-| **Notification Service** | Sends SMS (SNS), email (SES) and push notifications (SNS mobile push) on every status change and SLA breach, using contact details and preferences from the User / RBAC Service. Archives every rendered message in the communications bucket and keeps its delivery record in the Notification DB. |
-| **Fraud Detection Service** | Rule-based scoring on `ClaimCreated`, `DocumentUploaded` and `InvoiceSubmitted` (ML scoring in a later phase), with rules from the Configuration Service, claim history from the read replica and its own Fraud DB; publishes `FraudFlagged`. |
+| **Claims Service** (FastAPI) | Create / read / update claims; enforces the claim **state machine** and ownership rules with the role permissions it reads from the Configuration Service. Checks the policy with the Policy Administration System (E3) at first notice of loss and the cover again at adjudication. Owns the Claims DB — claims, status history, assignments, the policy snapshot, the fraud hold and the claim's workflow execution — and records assignment, document, repair, invoice, payment and fraud events against the claim. Holds the claim type, which selects the workflow definition, and the claim's region, set from the loss location at first notice of loss. Runs information requests and disputes, and records the customer's signed declaration and settlement acceptance (`SettlementAccepted`). |
+| **Incident Management Service** | Auto-assigns the Case Manager and the Adjustor at first notice of loss, from the staff roster and availability (User / RBAC Service) and current workload (Claims read replica). Assigns the Surveyor once the vehicle's inspection location is known: the partner workshop's address on `AppointmentBooked`, or the address the customer gives on `VehicleLocationSet` (an external workshop, or wherever a vehicle that may be a total loss is held). The Surveyor comes from the field office whose coverage area contains that location (Location Service). A theft claim has no survey. Supports delegation by the Case Manager; publishes `ClaimAssigned` for each assignment. |
+| **Workflow Engine** | Orchestrates the claim lifecycle on **AWS Step Functions** — one execution per open claim, started at first notice of loss — for durable, auditable state, with workflow rules from the Configuration Service. One workflow definition per claim type (repair at a partner workshop, repair at an external workshop, total loss, theft), chosen at first notice of loss; a survey that declares a total loss moves the claim to the total-loss definition. |
+| **Repair & Work Order Service** | Owns the Repair DB: work orders and estimates, repair status, expected delivery dates and final invoices from partner workshops, and invoices from external workshops that the customer uploads. Records the two vehicle milestones the workshop confirms in the Partner Portal, or the customer for an external workshop: vehicle received and vehicle handed back. Publishes `VehicleReceived`, `WorkOrderUploaded`, `RepairStatusUpdated`, `DeliveryDateChanged`, `InvoiceSubmitted` and `VehicleDelivered`. |
+| **Booking Service** | Owns the Booking DB: workshop appointments and rental bookings. Sends the workshop the initial accident details with each appointment (`AppointmentBooked`); checks rental eligibility against the policy cover in E3 and, once the vehicle is received (`VehicleReceived`), books the rental through the Partner Portal in Phase 1, the car-rental API later (`RentalBooked`). Extends the rental when the delivery date moves (`DeliveryDateChanged`), up to the policy's rental-day limit, and tells the customer when extra days fall outside the cover; ends it when the vehicle is handed back (`VehicleDelivered`) (`RentalChanged`). Passes the rental partner's invoice to the Payment Service (`RentalInvoiceSubmitted`). For an external workshop, records the address the customer gives (`VehicleLocationSet`). |
+| **Notification Service** | Sends SMS (SNS), email (SES) and push notifications (SNS mobile push) on every status change and SLA breach, using contact details and preferences from the User / RBAC Service. Holds each claim's message thread between the customer and the assigned staff, and receives email replies through Amazon SES inbound at a reply address per claim. Archives every message, sent or received, in the communications bucket and keeps its record in the Notification DB. |
+| **Fraud Detection Service** | Rule-based scoring on `ClaimCreated`, `DocumentUploaded`, `InvoiceSubmitted` and `RentalInvoiceSubmitted` (ML scoring in a later phase), with rules from the Configuration Service, claim history from the read replica, matches from Verisk's ISO ClaimSearch (D7) and its own Fraud DB; publishes `FraudFlagged`. |
 | **Reporting Service** | Role-based reports from Redshift as scheduled or on-demand jobs, delivered as a link (report catalogue in §6, Workflow 4); the Auditor's read-only extract of the application audit trail. |
 
 **Support services**
 
 | Service | Responsibility |
 |---|---|
-| **Payment Service** (PCI-DSS) | Electronic payments through a PCI-DSS Level 1 provider (Stripe): collects the customer's dues on Stripe's hosted payment page and pays workshops and customers through Stripe Connect payouts. Owns the Payment DB (see *Payments and payouts* below). |
-| **User / RBAC Service** | Accounts, the six roles and their permissions — **configurable without code changes** — staff availability, and contact details and notification preferences, in the User DB. Passes customer profile changes (correspondence address, billing cycle) to E3, which owns them. |
+| **Payment Service** (PCI-DSS) | Electronic payments through a PCI-DSS Level 1 provider (Stripe): collects the customer's dues and premium payments on Stripe's hosted payment page, and pays workshops, rental partners and customers through Stripe Connect payouts. Posts every payment, payout and refund to YCompany's general ledger (E4). Owns the Payment DB (see *Payments and payouts* below). |
+| **User / RBAC Service** | Accounts, the six roles and their permissions — **configurable without code changes** — staff availability and region, and contact details, notification preferences and SMS consent, in the User DB. Passes customer profile changes (correspondence address, billing cycle) to E3, which owns them. |
 | **Document Service** | Upload checks, metadata and versioning (S3 for content, the Document DB for metadata, OpenSearch for search); see *Document upload, validation and claim linkage* below. |
 | **Location Service** | Partner directory — workshops, authorised service stations and car-rental partners — and surveyor coverage areas in the Partner DB; lookup by zip code or geolocation through OpenSearch geo-search, with Amazon Location Service turning addresses and zip codes into coordinates. |
-| **Configuration Service** | Feature flags, workflow transitions, role permissions, fraud rules and SLA thresholds in the Config DB, cached in Redis; changed from the administration console without redeployment. |
+| **Configuration Service** | Feature flags, workflow transitions, role permissions, fraud rules, SLA thresholds, claim types and the total-loss threshold, the dispute window, and the region hierarchy (regions → states → counties → zip codes) in the Config DB, cached in Redis; changed from the administration console without redeployment. |
 
 ### Layer 4 — Async / Messaging
 
 - **Transactional outbox and outbox relay** — a service writes each domain event to an outbox table in the same transaction as the change that raised it, and an outbox relay publishes it to EventBridge. An event therefore exists exactly when its change committed, and none is lost if the bus is briefly unreachable. The POC's notification outbox follows the same pattern.
 - **AWS EventBridge** — one custom event bus per Region carrying the domain events below. Its archive is enabled, so events can be replayed to a new consumer or after a failover, and its rules start and advance the Step Functions claim workflow.
 - **AWS SQS** — one queue per consuming service, each with a **dead-letter queue** and alarms on the first dead-lettered message and on the age of the oldest message. Consumers are idempotent: they deduplicate on the event ID and drop an event older than the claim version they already hold.
-- **AWS SNS** — the last-mile hop for SMS and for mobile push to APNs and FCM; it also returns SES bounce and delivery reports to the Notification Service.
+- **AWS SNS** — the last-mile hop for SMS and for mobile push to APNs and FCM; it also returns SES bounce and delivery reports to the Notification Service. SMS leaves from registered US sender numbers: a dedicated short code for volume, with toll-free numbers as a fallback, set up in AWS End User Messaging SMS before go-live, because carrier registration takes weeks. Customers opt in to SMS at registration and can reply STOP at any time. Consent and opt-outs are kept with the notification preferences, as the TCPA requires.
+- **Amazon SES** — email out, and email replies in: a receipt rule set in each Region takes replies to each claim's reply address and hands them to the Notification Service, and the MX record follows the Region switch.
 - **Amazon EventBridge Scheduler + AWS Lambda** — scheduled jobs: the SLA and ageing scan, the nightly document reconciliation and the clean-up of superseded workflow executions. Lambda also runs the document indexing consumer.
 
 This asynchronous backbone is what turns a status change into an instantaneous notification and an analytics record, without coupling services to one another.
@@ -196,18 +198,25 @@ This asynchronous backbone is what turns a status change into an instantaneous n
 | Event | Published by | Consumed by |
 |---|---|---|
 | `ClaimCreated` | Claims Service | Workflow Engine, Incident Management, Fraud Detection, Notification |
-| `ClaimAssigned` | Incident Management | Claims Service, Notification |
+| `ClaimAssigned` | Incident Management | Claims Service, Notification (one event per assignment: the Case Manager and the Adjustor at first notice of loss, the Surveyor once the vehicle's location is known) |
 | `StatusChanged` | Claims Service | Notification (every status change) |
 | `SurveySubmitted` | Workflow Engine | Notification (the Adjustor) |
 | `ClaimApproved` · `ClaimRejected` | Workflow Engine | Payment Service, Notification; the workshop is told to proceed |
+| `SettlementAccepted` | Claims Service | Payment Service, Notification |
 | `FraudFlagged` | Fraud Detection | Claims Service (Fraud Review hold), Notification (the Case Manager) |
 | `DocumentUploaded` | Document Service | Claims Service, Fraud Detection, indexing consumer |
-| `AppointmentBooked` · `RentalBooked` | Booking Service | Notification (the workshop receives the initial accident details) |
-| `WorkOrderUploaded` · `RepairStatusUpdated` · `DeliveryDateChanged` | Repair & Work Order Service | Claims Service, Notification |
+| `AppointmentBooked` · `RentalBooked` | Booking Service | Incident Management (`AppointmentBooked`: the Surveyor by workshop location), Notification (the workshop receives the initial accident details) |
+| `VehicleLocationSet` | Booking Service | Incident Management (the Surveyor for an external workshop or a held vehicle) |
+| `RentalChanged` · `RentalInvoiceSubmitted` | Booking Service | Notification; Payment Service and Fraud Detection (`RentalInvoiceSubmitted`) |
+| `VehicleReceived` · `VehicleDelivered` | Repair & Work Order Service | Booking Service (rental start and end), Claims Service, Notification |
+| `WorkOrderUploaded` · `RepairStatusUpdated` · `DeliveryDateChanged` | Repair & Work Order Service | Claims Service, Notification; Booking Service (`DeliveryDateChanged`: rental extension) |
 | `InvoiceSubmitted` | Repair & Work Order Service | Payment Service, Fraud Detection, Claims Service, Notification |
 | `PaymentApproved` · `PaymentReceived` · `PayoutSent` | Payment Service | Claims Service, Notification |
+| `PremiumPaid` | Payment Service | Notification (receipt) |
 | `SlaBreached` | SLA and ageing scan (scheduled) | Notification |
 | `ReportReady` | Reporting Service | Notification |
+
+The Information Requested and Disputed states reach the Notification Service as `StatusChanged`, like every other status. A policy-level event such as `PremiumPaid` carries the policy number in place of the claim ID.
 
 ### Layer 5 — Data (Polyglot, Multi-AZ)
 
@@ -215,15 +224,15 @@ A **polyglot persistence** strategy uses the right store for each job:
 
 | Store | Technology | Purpose |
 |---|---|---|
-| **Claims DB** | RDS PostgreSQL (Multi-AZ) | Primary transactional store: claims, status history, assignments, policy snapshot, fraud hold and the owning workflow execution. |
-| **User DB** | RDS PostgreSQL (Multi-AZ) | Accounts, roles and permissions, staff availability, contact details and notification preferences. |
+| **Claims DB** | RDS PostgreSQL (Multi-AZ) | Primary transactional store: claims, status history, assignments, policy snapshot, fraud hold, claim type and region, information requests, disputes, settlement acceptances and the owning workflow execution. |
+| **User DB** | RDS PostgreSQL (Multi-AZ) | Accounts, roles and permissions, staff availability and region, contact details, notification preferences and SMS consent. |
 | **Document DB** | RDS PostgreSQL (Multi-AZ) | Document metadata, versions, SHA-256 digests and retention class, each row linked to its claim; JSONB columns for flexible, evolving attributes. |
-| **Payment DB** | RDS PostgreSQL (Multi-AZ) | Customer dues, amounts owed to workshops and customers, Stripe payment intents, connected accounts and payouts. |
-| **Repair DB** | RDS PostgreSQL (Multi-AZ) | Work orders, estimates, repair status, delivery dates and invoices. |
-| **Booking DB** | RDS PostgreSQL (Multi-AZ) | Workshop appointments and rental bookings. |
+| **Payment DB** | RDS PostgreSQL (Multi-AZ) | Customer dues, premium payments, amounts owed to workshops, rental partners and customers, Stripe payment intents, connected accounts, payouts and ledger postings. |
+| **Repair DB** | RDS PostgreSQL (Multi-AZ) | Work orders, estimates, vehicle received and handed-back milestones, repair status, delivery dates and invoices. |
+| **Booking DB** | RDS PostgreSQL (Multi-AZ) | Workshop appointments, external-workshop addresses, rental bookings, extensions and rental invoices. |
 | **Partner DB** | RDS PostgreSQL (Multi-AZ) | Partner directory and surveyor coverage areas. |
-| **Config DB** | RDS PostgreSQL (Multi-AZ) | Feature flags, workflow transitions, role permissions, fraud rules and SLA thresholds. |
-| **Notification DB** | RDS PostgreSQL (Multi-AZ) | The delivery record of every message sent. |
+| **Config DB** | RDS PostgreSQL (Multi-AZ) | Feature flags, workflow transitions, role permissions, fraud rules, SLA thresholds, claim types, the dispute window and the region hierarchy. |
+| **Notification DB** | RDS PostgreSQL (Multi-AZ) | The record of every message sent or received, and each claim's message thread. |
 | **Fraud DB** | RDS PostgreSQL (Multi-AZ) | Fraud scores, rule hits, review outcomes and the document-digest index. |
 | **Audit DB** | RDS PostgreSQL (Multi-AZ, separate instance) | The append-only, hash-chained application audit trail (Layer 6). |
 | **Cache** | ElastiCache Redis | Session, claim-status, permission and reference-data caching for sub-100 ms reads. |
@@ -231,7 +240,7 @@ A **polyglot persistence** strategy uses the right store for each job:
 | **Object Storage** | Amazon S3 | Six buckets: incoming uploads, claim documents, communications, audit archive, reports, and the portals' static files — versioned and KMS-encrypted, with Object Lock on claim documents, communications and the audit archive. |
 | **Data Warehouse** | Amazon Redshift (RA3) | Analytics, management reporting and fraud analytics, fed by a zero-ETL integration from RDS PostgreSQL. |
 
-In Phase 1 the ten service databases run as separate databases, each with its own credentials, on one Multi-AZ RDS PostgreSQL instance per Region. Every connection goes through **RDS Proxy**, which keeps the connection count bounded as tasks scale out, and an **in-Region read replica** serves status reads, assignment workload, fraud history and the SLA scan. The audit store runs on its own instance, so no one with access to the service databases can alter it. Redshift receives changes within seconds through a **zero-ETL integration**, filtered to the tables reporting needs — claims, status history, assignments, payments, fraud flags, repairs and bookings — and excluding credentials and document content (Messaging, Analytics and Identity DAR).
+In Phase 1 the ten service databases run as separate databases, each with its own credentials, on **four Multi-AZ RDS PostgreSQL instance groups** per Region, grouped by load and sensitivity: **claims core** (the Claims, Repair, Booking, Partner and Config DBs); **identity** (the User DB, with up to 200 million customer accounts and every sign-in); **high-volume records** (the Notification and Document DBs, which grow by about 360 million and 120 million rows a year); and **money and fraud** (the Payment and Fraud DBs). A failure, a maintenance window or a heavy query in one group leaves the others untouched, and each group scales on its own. Every connection goes through **RDS Proxy**, which keeps the connection count bounded as tasks scale out, and an **in-Region read replica** of the claims-core group serves status reads, assignment workload, fraud history and the SLA scan. The audit store runs on its own instance, so no one with access to the service databases can alter it. Redshift receives changes within seconds through **zero-ETL integrations** from the claims-core and money-and-fraud groups, filtered to the tables reporting needs — claims, status history, assignments, payments, fraud flags, repairs and bookings — and excluding credentials and document content (Messaging, Analytics and Identity DAR).
 
 Document metadata deliberately stays in PostgreSQL rather than in a separate document database. JSONB covers the flexible attributes and OpenSearch handles full-text search, so a third-party document store would add a vendor, an internet-egress path and its own multi-Region cluster without adding a capability.
 
@@ -265,26 +274,78 @@ Every document is tied to its claim from the moment an upload is requested, and 
 6. **Clean-up and reconciliation.** A lifecycle rule deletes any incoming object not confirmed within 24 hours, and a nightly scheduled job compares the Document DB with S3 Inventory to flag a file without metadata or metadata without a file.
 7. **Downloads.** A permitted download is a pre-signed GET that expires within minutes; who asked for which document, and when, goes to the application audit trail.
 
+#### Repair location, surveyor assignment and rental
+
+1. **Inspection location.** The vehicle's inspection location is fixed when the customer books a partner workshop (`AppointmentBooked`) or gives an external workshop's address, or wherever a damaged vehicle is held (`VehicleLocationSet`).
+2. **Surveyor.** Incident Management then assigns the Surveyor from the field office whose coverage area contains that location, by availability and workload (`ClaimAssigned`). The Case Manager and the Adjustor were assigned at first notice of loss.
+3. **Rental start.** The workshop confirms the drop-off in the Partner Portal (`VehicleReceived`); for an external workshop the customer confirms it. The Booking Service then offers a rental if the policy covers one, checked with E3.
+4. **Rental extension.** When the workshop moves the delivery date (`DeliveryDateChanged`), the Booking Service extends the rental up to the policy's rental-day limit and tells the customer about any days beyond it (`RentalChanged`).
+5. **Rental end and payment.** When the vehicle is handed back (`VehicleDelivered`), the rental ends and the rental partner submits its invoice in the Partner Portal (`RentalInvoiceSubmitted`). The Payment Service pays the covered days by Stripe Connect payout, and any uncovered days are billed to the customer on the hosted payment page.
+
+#### Information requests, disputes and electronic signature
+
+- **Information requests.** Any assignee can ask the customer for a document or a detail. The claim goes to Information Requested and its SLA clock pauses. The customer answers in the portal or the app, with an upload or a message, and the claim resumes where it stopped.
+- **Disputes.** Within the dispute window (30 days by default, held in the Configuration Service), the customer can dispute an approved amount or a rejection, giving a reason and any documents. The claim goes to Disputed and the Case Manager is notified. The Case Manager sends it back to Under Adjudication or upholds the decision, with a reason the customer sees.
+- **Electronic signature.** Before the first claim, the customer consents to electronic records and signatures. Two things are signed in the portal or the app: the claim declaration at first notice of loss, and the acceptance of a cash settlement. The customer reviews a summary eClaims generates, then confirms with the step-up MFA used for contact-detail changes. eClaims renders the signed summary as a PDF and stores it in the claim-documents bucket with its SHA-256 digest, and the application audit trail records who signed what, when and from where. The design follows the US ESIGN Act's requirements — consent to electronic records, intent to sign, and a record kept and reproducible — and needs no separate e-signature vendor (Assumption 24). Customer actions therefore carry the same non-repudiation as staff actions.
+
 #### Payments and payouts
 
 - **Customer dues.** When a workshop submits the final invoice (`InvoiceSubmitted`), the Payment Service works out what the customer owes — the invoice less the approved amount, at least the deductible — and the customer is told before paying. The customer pays on **Stripe's hosted payment page** from the portal or the app, so card data never reaches eClaims (Assumption 4).
 - **Payouts.** On `ClaimApproved` the Payment Service records what YCompany owes. Once the invoice is in, it pays the workshop through a **Stripe Connect payout**; for a repair at an external workshop it reimburses the customer the same way. Workshops and customers complete Stripe's Connect onboarding before their first payout, and Stripe holds their bank details (Assumption 14).
 - **Webhooks.** Stripe reports every payment and payout to `/payments/webhooks`. The Payment Service verifies each webhook's signature and processes each Stripe event once, keyed on its event ID.
-- **Events and status.** `PaymentApproved` (a payout authorised), `PaymentReceived` (the customer's dues collected) and `PayoutSent` (a payout confirmed by Stripe) move the claim to Paid once everything is settled, then to Closed. Workshops track their payments in the Partner Portal; customers in the portal or the app. The Payment DB holds dues, amounts owed, payment intents, connected accounts and payouts.
+- **Rental partners.** The covered days of each rental are paid to the rental partner through a Stripe Connect payout once its invoice is in (`RentalInvoiceSubmitted`); uncovered days are billed to the customer.
+- **Cash settlements and premiums.** For a total loss or a theft, the customer is paid by Connect payout after accepting the settlement (`SettlementAccepted`). Where a lender holds a lien on the vehicle, YCompany's finance team pays the lender's share from the ledger posting (Assumption 22). Premium payments use the same hosted page and are posted to the policy's billing record in E3 (`PremiumPaid`).
+- **Ledger.** The Payment Service posts every payment, payout and refund to YCompany's general ledger (E4) through its outbox, over the private connection (*Hybrid connectivity to YCompany*, below). Claim reserves stay in YCompany's finance systems; eClaims supplies the assessed and approved amounts (§10).
+- **Events and status.** `PaymentApproved` (a payout authorised), `PaymentReceived` (the customer's dues collected) and `PayoutSent` (a payout confirmed by Stripe) move the claim to Paid once everything is settled, then to Closed. Workshops and rental partners track their payments in the Partner Portal; customers in the portal or the app. The Payment DB holds dues, premium payments, amounts owed, payment intents, connected accounts, payouts and ledger postings.
 
 #### Fraud handling
 
-- The Fraud Detection Service scores a claim on `ClaimCreated`, `DocumentUploaded` and `InvoiceSubmitted`, with rules held in the Configuration Service — for example a claim soon after the policy started, repeated claims on one vehicle or policy (claim history from the read replica), a photo whose SHA-256 digest already belongs to another claim (the digest index in the Fraud DB), or an invoice well above the approved estimate.
+- The Fraud Detection Service scores a claim on `ClaimCreated`, `DocumentUploaded` and `InvoiceSubmitted`, with rules held in the Configuration Service — for example a claim soon after the policy started, repeated claims on one vehicle or policy (claim history from the read replica), a photo whose SHA-256 digest already belongs to another claim (the digest index in the Fraud DB), or an invoice well above the approved estimate. At first notice of loss the service also queries Verisk's ISO ClaimSearch, the US insurance industry's shared claims database, and reports the claim to it; a match with another insurer's claim on the same vehicle, person or loss is a rule input.
 - A score above the configured threshold publishes `FraudFlagged`. The Claims Service puts the claim on a **Fraud Review** hold, which blocks further transitions and payments, and the Case Manager is notified. The Case Manager clears the flag, and the claim resumes where it stopped, or confirms it, and the claim is Rejected and referred for investigation outside eClaims.
 - Scores, rule hits and outcomes reach Redshift through the zero-ETL integration for the fraud report. ML scoring is a later phase (§10).
 
 #### Communications archive
 
-Every message the Notification Service sends — channel, recipient, time and the rendered content — is stored as an object in the **communications bucket** under S3 Object Lock in compliance mode, with its delivery record in the Notification DB; SES and SNS delivery reports update the record. Staff and the Auditor see a claim's communications on the claim in the Internal Portal.
+Every message the Notification Service sends or receives — channel, sender, recipient, time and content, including a customer's reply in the portal or the app and an email reply through SES inbound — is stored as an object in the **communications bucket** under S3 Object Lock in compliance mode, with its delivery record in the Notification DB; SES and SNS delivery reports update the record. Staff and the Auditor see a claim's communications on the claim in the Internal Portal.
 
 #### Claim SLA and ageing alerts
 
-The case study asks the alert and notification sub-system to analyse the time to resolve each incident. An **EventBridge Scheduler** job runs every 15 minutes: it reads open claims from the read replica, compares each claim's time in its current status with the thresholds in the Configuration Service, and publishes `SlaBreached`. The Notification Service alerts the assignee and the Case Manager, and a second breach escalates to the Regional Manager. The same ageing figures feed the ageing matrix (§6, Workflow 4).
+The case study asks the alert and notification sub-system to analyse the time to resolve each incident. An **EventBridge Scheduler** job runs every 15 minutes: it reads open claims from the read replica, compares each claim's time in its current status with the thresholds in the Configuration Service, and publishes `SlaBreached`; a claim on an Information Requested hold is skipped while it waits for the customer. The Notification Service alerts the assignee and the Case Manager, and a second breach escalates to the Regional Manager. The same ageing figures feed the ageing matrix (§6, Workflow 4).
+
+#### Data protection and regulatory compliance
+
+- **Classification.** Data is classified as Public, Internal, Confidential or Restricted. Restricted covers the driver's licence number, date of birth, injury details and precise location.
+- **Field-level encryption.** Restricted fields are encrypted in the service with the AWS Encryption SDK and a KMS key per data class, on top of storage encryption, so someone who can read the database without that key sees ciphertext. Bank and card details never reach eClaims; Stripe holds them.
+- **Logs.** The logging library masks Restricted and Confidential fields, and CloudWatch Logs data protection policies detect and mask any that get through. Amazon Macie scans S3.
+- **Regulations.** The design is built to support the privacy and safeguards provisions of the Gramm-Leach-Bliley Act, as enforced by state insurance regulators; state insurance data security laws based on the NAIC Insurance Data Security Model Law, such as NYDFS 23 NYCRR 500, which require a risk assessment, an incident response plan and notice of a cybersecurity event to the regulator within 72 hours; state privacy laws such as CCPA/CPRA where they apply; and PCI-DSS, with scope limited to Stripe's hosted page. A SOC 2 Type II report is the platform's assurance report.
+- **Retention and residency.** Each document class is kept for its regulatory period (Assumption 15), and a deletion request is honoured once that period ends. All data stays in US Regions.
+
+#### Interface standards and versioning
+
+- **API contracts.** Each service publishes an OpenAPI 3.1 contract generated from its FastAPI code. The pipeline compares it with the last released contract (oasdiff) and fails on a breaking change.
+- **API versions.** Paths carry a major version (`/v1/`). Additive changes stay within a version. A breaking change ships as a new version, and the old one stays for at least six months, marked with `Deprecation` and `Sunset` headers.
+- **Events.** Every event carries its schema version in the envelope (Layer 4), and schemas are registered in the EventBridge schema registry. Consumers ignore fields they do not know.
+- **Industry model.** External interfaces map to ACORD's property-and-casualty data standards where a standard message exists: the Policy Administration System, ISO ClaimSearch, the ledger and the Phase 2 partner API. Internal APIs keep eClaims' own domain models.
+
+#### Partner integration (Phase 2)
+
+Phase 1 partners use the Partner Portal. Phase 2 adds a partner API for workshop chains and rental companies that want to connect their own systems:
+- **Endpoints.** REST under `/partner-api/v1`, served by the same Booking, Repair & Work Order and Payment services.
+- **Credentials.** Each partner system gets its own OAuth2 client-credentials grant, with scopes by partner type and a rate limit per client.
+- **Webhooks.** Signed outbound webhooks for appointments, approvals, delivery-date changes and payouts.
+- **Data model.** Payloads follow ACORD where a standard message exists.
+
+Amazon API Gateway with usage plans is reconsidered for this API alone (Layer 2). The car-rental API (E1) is the outbound counterpart.
+
+#### Hybrid connectivity to YCompany
+
+YCompany's Policy Administration System (E3) and general ledger (E4) run in its data centre (Assumption 18):
+- **Links.** Two AWS Direct Connect connections at diverse locations (**H1**), with a Site-to-Site VPN as a backup (**H2**), terminate on a Direct Connect gateway (**H3**).
+- **Both Regions.** The Direct Connect gateway is associated with a Transit Gateway in each Region (**V11**, **V11′**), and each Region's VPC attaches to its Transit Gateway, so us-east-2 reaches YCompany over the same private path after a failover.
+- **Routing.** Private subnets route YCompany's address ranges to the Transit Gateway. NAT Gateways still carry traffic to internet services: Stripe, Okta, ISO ClaimSearch and the push services.
+- **Encryption.** Traffic stays TLS-encrypted end to end over the private link.
+
+If YCompany confirms E3 is hosted in AWS or as SaaS, AWS PrivateLink replaces Direct Connect for it, and nothing else changes.
 
 ### Deployment Topology
 
@@ -294,66 +355,71 @@ Multi-AZ**. **us-east-1** (N. Virginia) is the primary Region and serves all tra
 (Ohio) is a warm standby that runs the same stack at minimum capacity. Multi-Region active-active
 remains out of scope (§10). Inbound traffic — from browsers, the mobile app and Stripe's webhooks —
 resolves through **Amazon Route 53** (**G1**) and passes through a global edge tier outside any
-Region — **G2** AWS WAF + Shield and **G3** CloudFront. CloudFront serves the three portals' static
-files from an S3 bucket through origin access control, and sends API calls to its origin hostname, a
-Route 53 failover record whose health checks follow **Route 53 ARC routing controls** (**G4**), so
-traffic reaches us-east-2 only when the failover runbook switches Regions. In us-east-1, one **Amazon
-VPC** spans three Availability Zones, us-east-1a, us-east-1b and us-east-1c. A single regional
-Application Load Balancer (**V1**) places a node in each zone's public subnet, accepts traffic only
-from CloudFront (the CloudFront managed prefix list in its security group, plus a secret origin
-header), and reaches the ECS Fargate service tasks (**V3**) in all three zones through one target
-group per service. Each zone repeats the same three-subnet pattern: a public subnet holding a NAT
-Gateway (**V2**); a private/app subnet running the Fargate tasks — every microservice from Layer 3,
-including the Auth Service that Layer 2 groups logically at the edge — and **RDS Proxy** (**V7**);
-and an isolated data subnet with no direct route to the internet. The data subnets hold the RDS
-PostgreSQL primary and standby with the per-service databases (**V4**), an in-Region read replica
-(**V8**), the separate Audit DB (**V9**), ElastiCache Redis (**V5**), a three-node OpenSearch domain
-(**V6**) for write quorum, and the Redshift cluster (**V10**), which receives changes from V4 through
-the zero-ETL integration. AWS-managed, serverless services from Layers 4–6 — S3, EventBridge, SQS,
-SNS, Lambda and Step Functions, EventBridge Scheduler, Secrets Manager, KMS, IAM, CloudWatch, X-Ray,
-CloudTrail, GuardDuty, Security Hub with Inspector and Macie, AWS Backup, CloudWatch Synthetics, ACM
-and Amazon Location Service (**N1–N18**) — sit outside the VPC's subnets, reached through VPC
-endpoints. Browsers and the mobile app upload documents straight to S3 (**N1**) with pre-signed
-POSTs, and GuardDuty Malware Protection (**N13**) scans each object before the Document Service
-accepts it. Only the NAT Gateways carry egress to the external systems already introduced on page 1
-(**D1–D4**, **E1**, and YCompany's Policy Administration System, **E3**); SNS also delivers mobile
-push to APNs and FCM (**D5**). Every task with a side effect (assignment, notification, payment, the
-outbox relay and the scheduled jobs) first checks the ARC routing-control state (**G4**) and acts only
-in the active Region. The page shows the production account; AWS Organizations keeps development,
-staging, production and a security and log-archive account apart, with CloudTrail as an organization
-trail into the log-archive account. The release workflow that deploys into this runtime is detailed
-separately on page 6 (below).
+Region — **G2** AWS WAF + Shield Advanced and **G3** CloudFront. CloudFront serves the three
+portals' static files from an S3 bucket through origin access control, and sends API calls to its
+origin hostname, a Route 53 failover record whose health checks follow **Route 53 ARC routing
+controls** (**G4**), so traffic reaches us-east-2 only when the failover runbook switches Regions.
+In us-east-1, one **Amazon VPC** spans three Availability Zones, us-east-1a, us-east-1b and
+us-east-1c. A single regional Application Load Balancer (**V1**) places a node in each zone's public
+subnet, accepts traffic only from CloudFront (the CloudFront managed prefix list in its security
+group, plus a secret origin header), and reaches the ECS Fargate service tasks (**V3**) in all three
+zones through one target group per service. Each zone repeats the same three-subnet pattern: a
+public subnet holding a NAT Gateway (**V2**); a private/app subnet running the Fargate tasks — every
+microservice from Layer 3, including the Auth Service that Layer 2 groups logically at the edge —
+and **RDS Proxy** (**V7**); and an isolated data subnet with no direct route to the internet. The
+data subnets hold the four RDS PostgreSQL instance groups, each a primary and standby, with the
+per-service databases (**V4**), an in-Region read replica of the claims-core group (**V8**), the
+separate Audit DB (**V9**), ElastiCache Redis (**V5**), a three-node OpenSearch domain (**V6**) for
+write quorum, and the Redshift cluster (**V10**), which receives changes from V4 through the
+zero-ETL integrations. AWS-managed, serverless services from Layers 4–6 — S3, EventBridge, SQS, SNS,
+Lambda and Step Functions, EventBridge Scheduler, Secrets Manager, KMS, IAM, CloudWatch, X-Ray,
+CloudTrail, GuardDuty, Security Hub with Inspector and Macie, AWS Backup, CloudWatch Synthetics,
+ACM, Amazon Location Service and Amazon Textract (**N1–N19**) — sit outside the VPC's subnets,
+reached through VPC endpoints. Browsers and the mobile app upload documents straight to S3 (**N1**)
+with pre-signed POSTs, and GuardDuty Malware Protection (**N13**) scans each object before the
+Document Service accepts it. The NAT Gateways carry egress to the internet services already
+introduced on page 1 (**D1–D4**, **D7** ISO ClaimSearch, **E1**); SNS also delivers mobile push to
+APNs and FCM (**D5**). YCompany's Policy Administration System (**E3**) and general ledger (**E4**)
+are reached privately: a Transit Gateway (**V11**) and AWS Direct Connect (**H1–H3**), with a
+Site-to-Site VPN as a backup (*Hybrid connectivity to YCompany*, above). Every task with a side
+effect (assignment, notification, payment, the outbox relay and the scheduled jobs) first checks the
+ARC routing-control state (**G4**) and acts only in the active Region. The page shows the production
+account; AWS Organizations keeps development, staging, production and a security and log-archive
+account apart, with CloudTrail as an organization trail into the log-archive account. The release
+workflow that deploys into this runtime is detailed separately on page 6 (below).
 
 us-east-2 repeats the pattern in compact form: its own VPC across us-east-2a, us-east-2b and
 us-east-2c, a regional ALB (**V1′**), NAT Gateways (**V2′**), Fargate tasks held at minimum capacity
 (**V3′**) and RDS Proxy (**V7′**). Data reaches it through each service's managed cross-Region
-feature: an asynchronous RDS cross-Region read replica (**V4′**) and one of the Audit DB (**V9′**),
-OpenSearch cross-cluster replication to a follower domain (**V6′**) over inter-Region VPC peering, S3
-Cross-Region Replication including the communications and Object Lock audit archives (**N1′**),
-Secrets Manager replica secrets (**N7′**), us-east-2 KMS keys (**N8′**), Redshift snapshot copies from
-which the standby warehouse (**V10′**) is restored, and AWS Backup copies (**N15′**). ElastiCache
-(**V5′**) is not replicated and starts cold. EventBridge with its archive, SQS, SNS, Lambda, Step
-Functions and EventBridge Scheduler (**N2′–N6′**) are deployed by Terraform in both Regions, with the
-Scheduler's jobs idle until the Region is active. On a us-east-1 outage the on-call runs a
-pre-approved, game-day-tested runbook: promote the database and audit replicas and their secrets,
-point RDS Proxy at them, pre-scale the standby services, then flip the routing controls so Route 53
-answers with V1′. CloudWatch alarms page the on-call but never move traffic, and a recovered us-east-1
-cannot take traffic back while its control is off, which prevents split-brain. Failback is the same
-runbook in reverse, after re-seeding us-east-1. us-east-2 also holds SES production access, SNS SMS
-and mobile-push registration, partner and Stripe allow-lists for its NAT addresses and raised Fargate
-quotas, so it can take full load. Messages queued and workflow steps running in us-east-1 at the
-moment of failure are not replicated; the runbook re-drives the affected claims from their status in
-the database and from the transactional outbox. Step Functions executions are regional and are not
-replicated either, so the runbook does not recreate the roughly one million open claim executions
-(§9.1) up front. Instead, each claim records the execution that owns it. When the next action on a
-claim finds that execution in the other Region, the Workflow Engine starts a new execution in the
-active Region at the claim's current status, with the action in its input, so the action completes in
-the same request. Workflow executions carry no timers in Phase 1 — claim ageing is checked by the
-scheduled SLA job against the database (*Claim SLA and ageing alerts*, above) — so a claim that nobody
-acts on needs no execution until somebody does. Because every task with a side effect checks the ARC
-routing-control state first, a recovering us-east-1 cannot resume a stranded step and repeat it.
-Failback applies the same rule in the other direction, and a scheduled job then stops the executions
-that a rebuild has superseded. The Region-failure targets are in §7.
+feature: asynchronous RDS cross-Region read replicas of each instance group (**V4′**) and of the
+Audit DB (**V9′**), OpenSearch cross-cluster replication to a follower domain (**V6′**) over
+inter-Region VPC peering, S3 Cross-Region Replication including the communications and Object Lock
+audit archives (**N1′**), Secrets Manager replica secrets (**N7′**), us-east-2 KMS keys (**N8′**),
+Redshift snapshot copies from which the standby warehouse (**V10′**) is restored, and AWS Backup
+copies (**N15′**). ElastiCache (**V5′**) is not replicated and starts cold. EventBridge with its
+archive, SQS, SNS, Lambda, Step Functions and EventBridge Scheduler (**N2′–N6′**) are deployed by
+Terraform in both Regions, with the Scheduler's jobs idle until the Region is active. On a us-east-1
+outage the on-call runs a pre-approved, game-day-tested runbook: promote the database and audit
+replicas and their secrets, point RDS Proxy at them, pre-scale the standby services, then flip the
+routing controls so Route 53 answers with V1′. CloudWatch alarms page the on-call but never move
+traffic, and a recovered us-east-1 cannot take traffic back while its control is off, which prevents
+split-brain. Failback is the same runbook in reverse, after re-seeding us-east-1. us-east-2 also
+holds SES production access, SNS SMS and mobile-push registration, partner and Stripe allow-lists
+for its NAT addresses, a Transit Gateway (**V11′**) associated with the same Direct Connect gateway,
+and raised Fargate quotas, so it can take full load. Messages queued and workflow steps running in
+us-east-1 at the moment of failure are not replicated; the runbook re-drives the affected claims
+from their status in the database and from the transactional outbox. Step Functions executions are
+regional and are not replicated either, so the runbook does not recreate the roughly one million
+open claim executions (§9.1) up front. Instead, each claim records the execution that owns it. When
+the next action on a claim finds that execution in the other Region, the Workflow Engine starts a
+new execution in the active Region at the claim's current status, with the action in its input, so
+the action completes in the same request. Workflow executions carry no timers in Phase 1 — claim
+ageing is checked by the scheduled SLA job against the database (*Claim SLA and ageing alerts*,
+above) — so a claim that nobody acts on needs no execution until somebody does. Because every task
+with a side effect checks the ARC routing-control state first, a recovering us-east-1 cannot resume
+a stranded step and repeat it. Failback applies the same rule in the other direction, and a
+scheduled job then stops the executions that a rebuild has superseded. The Region-failure targets
+are in §7.
 
 ![Cloud / Deployment Architecture](diagrams/Cloud%20_%20Deployment%20Architecture.jpg)
 
@@ -411,16 +477,21 @@ compute and Camunda for workflow.
 
 | Capability | AWS profile (Phase 1) | On-premise profile |
 |---|---|---|
+| Edge — DNS, CDN, WAF, load balancing | Route 53 · CloudFront · WAF + Shield Advanced · ALB | A global server load balancer (F5 BIG-IP DNS or a DNS service with health checks) · a CDN and WAF service or F5 Advanced WAF · NGINX or F5 ingress |
+| Site failover | Route 53 ARC routing controls | A manual GSLB switch in the failover runbook |
+| Private link to YCompany systems | Direct Connect · Site-to-Site VPN · Transit Gateway | YCompany's internal network (E3 and E4 are local) |
 | Container runtime and auto-scaling | ECS on Fargate · ECS Service Auto Scaling | Kubernetes (EKS Anywhere, OpenShift or any CNCF-conformant distribution) · Horizontal Pod Autoscaler + Cluster Autoscaler |
 | Workflow | AWS Step Functions | Camunda Platform 8 (self-managed) |
 | Event bus and queues | EventBridge · SQS · SNS | Apache Kafka or RabbitMQ |
 | Scheduled jobs | EventBridge Scheduler · Lambda | Kubernetes CronJobs |
 | Push notifications | SNS mobile push | Direct APNs and FCM integration |
+| SMS and email | SNS SMS (End User Messaging sender numbers) · SES | An SMS aggregator · YCompany's SMTP relay or a transactional email provider |
 | Relational data | RDS PostgreSQL (Multi-AZ) | PostgreSQL with Patroni high availability |
 | Connection pooling | RDS Proxy | PgBouncer |
 | Change-data capture to analytics | Zero-ETL integration (RDS PostgreSQL → Redshift) | Debezium on Kafka Connect |
 | Application audit store | PostgreSQL (append-only) · S3 Object Lock | PostgreSQL (append-only) · MinIO object locking |
 | Malware scanning of uploads | GuardDuty Malware Protection for S3 | ClamAV scanning service |
+| Text extraction | Apache Tika · Amazon Textract | Apache Tika with Tesseract OCR |
 | Geocoding | Amazon Location Service | A self-hosted geocoder (e.g. Nominatim) or a licensed geocoding service |
 | Cache | ElastiCache Redis | Redis (Sentinel or Cluster) |
 | Search | Amazon OpenSearch Service | OpenSearch (self-managed) |
@@ -428,8 +499,17 @@ compute and Camunda for workflow.
 | Identity | Okta · IAM | Keycloak, or Okta with on-premise connectors |
 | Secrets and keys | Secrets Manager · KMS | HashiCorp Vault |
 | Observability | CloudWatch · X-Ray · CloudTrail | Prometheus · Grafana · OpenTelemetry · Loki or ELK |
+| Synthetic monitoring | CloudWatch Synthetics | Scheduled k6 browser checks |
+| Security monitoring | GuardDuty · Security Hub · Inspector · Macie | Falco · Trivy · YCompany's SIEM |
+| Backup | AWS Backup | pgBackRest for PostgreSQL · Velero for Kubernetes, copied to the second data centre |
 | Analytics | Amazon Redshift | On-premise data warehouse (e.g. PostgreSQL-based or ClickHouse) |
 | CI/CD | CodePipeline · CodeBuild · CodeDeploy · ECR | GitLab CI or Jenkins · Argo CD · Harbor |
+
+On-premise auto-scaling is bounded by the hardware: the Cluster Autoscaler adds nodes only from a pre-provisioned pool (vSphere or OpenShift machine sets), so peak capacity is bought in advance. Appendix B, page 8 draws the on-premise topology: two YCompany data centres with the same zones, replication and failover pattern as the two AWS Regions.
+
+![On-Premise Deployment Architecture](diagrams/On-Premise%20Deployment%20Architecture.jpg)
+
+*Figure — On-Premise Deployment Architecture: the on-premise profile across two YCompany data centres (Appendix B, page 8).*
 
 ---
 
@@ -437,17 +517,20 @@ compute and Camunda for workflow.
 
 | Actor | Portal | Key capabilities |
 |---|---|---|
-| **Customer** | Customer Portal / Mobile App | Submit claim, upload documents, track status, select workshop, book rental, pay electronically, receive payouts, change correspondence address and billing cycle |
-| **Case Manager** | Internal Portal | Assign / delegate cases, override Surveyor and Adjustor decisions, view full case details, clear or confirm fraud flags, receive SLA alerts, generate reports on received claims |
-| **Surveyor** | Internal Portal / Mobile App (offline) | Submit field damage assessment, update vehicle status |
+| **Customer** | Customer Portal / Mobile App | Submit claim, upload documents, track status, select workshop, book rental, pay electronically, receive payouts, change correspondence address and billing cycle, pay premiums, sign the claim declaration, accept a cash settlement or dispute a decision, answer information requests and message assigned staff |
+| **Case Manager** | Internal Portal | Assign / delegate cases, override Surveyor and Adjustor decisions, view full case details, clear or confirm fraud flags, resolve disputes, receive SLA alerts, generate reports on received claims |
+| **Surveyor** | Internal Portal / Mobile App (offline) | Submit field damage assessment, update vehicle status, declare a total loss |
 | **Adjustor** | Internal Portal | Review claim, documents and survey; adjudicate and approve/reject the amount against policy coverage |
 | **Auditor** | Internal Portal | Read-only access to all claims, their processing history and the application audit trail |
 | **Regional Manager** | Internal Portal | Region-level reports: processing time, amounts paid, claim count by geography; escalated SLA alerts |
 | **Top Management** | Internal Portal | Cross-region dashboard, KPIs and trend analysis |
 | **Administrator** | Internal Portal (administration console) | Maintain role permissions, workflow and fraud rules and SLA thresholds; register partners and surveyor coverage areas |
-| **Partner Workshop / Authorised Service Station** | Partner Portal | Receive appointments with the initial accident details, upload work order and estimates, update repair status and delivery date, submit final bill, track payment |
-| **Car Rental Partner** | Partner Portal | Publish rental-vehicle catalogue, confirm bookings |
+| **Partner Workshop / Authorised Service Station** | Partner Portal | Receive appointments with the initial accident details, confirm the vehicle received and handed back, upload work order and estimates, update repair status and delivery date, submit final bill, track payment |
+| **Car Rental Partner** | Partner Portal | Publish rental-vehicle catalogue, confirm and extend bookings, submit rental invoices, track payouts |
 | **External Workshop** | None | Repairs a vehicle that the customer takes outside the partner network; its estimate and invoice reach eClaims as documents the customer uploads (Assumption 17) |
+| **Partner system** (Phase 2) | Partner API | Book appointments, update repairs and invoices, and receive webhooks, system to system (§4, *Partner integration (Phase 2)*) |
+
+The Case Manager, the Surveyor and the Adjustor can each ask the customer for missing information (§3).
 
 Access for every role is enforced by the **User / RBAC Service** and is **configurable without code changes**, satisfying the functional requirement for role behaviour to be reconfigured administratively.
 
@@ -464,32 +547,34 @@ Access for every role is enforced by the **User / RBAC Service** and is **config
 
 ## 6. Key Workflows
 
-The five workflows below trace a claim through its full lifecycle and cover the customer's own account. Each numbered step names the acting party and — where relevant — the event that fires (event catalogue in §4, Layer 4). Notifications are omitted from individual steps for brevity but are raised on **every** status change. Each workflow is colour-coded on the data-flow arrows of the Layered Solution Architecture page (Appendix B, page 4); a hop that several workflows share is drawn in grey with their numbers on its label, so each workflow can be traced visually end to end.
+The six workflows below trace a claim through each of its paths and cover the customer's own account. Each numbered step names the acting party and — where relevant — the event that fires (event catalogue in §4, Layer 4). Notifications are omitted from individual steps for brevity but are raised on **every** status change. Each workflow is colour-coded on the data-flow arrows of the Layered Solution Architecture page (Appendix B, page 4); a hop that several workflows share is drawn in grey with their numbers on its label, so each workflow can be traced visually end to end.
 
 ### Workflow 1 — Claim Submission & Assignment
 
-1. Customer logs in on the portal or the mobile app and submits a claim (incident details, photos, police report). Photos and documents go straight to S3 and are validated and malware-scanned before they join the claim (§4, *Document upload, validation and claim linkage*).
+1. Customer logs in on the portal or the mobile app and submits a claim (incident details, photos, police report) and signs the claim declaration; a theft is reported with its police report and has no survey. Photos and documents go straight to S3 and are validated and malware-scanned before they join the claim (§4, *Document upload, validation and claim linkage*).
 2. **Claims Service** checks the policy and its period of cover with the Policy Administration System (E3), generates a Claim ID against the policy and publishes `ClaimCreated`, which also starts the claim's workflow execution.
-3. **Incident Management Service** auto-assigns a Case Manager, Surveyor and Adjustor based on location (surveyor field-office coverage), availability and workload (`ClaimAssigned`).
+3. **Incident Management Service** auto-assigns a Case Manager and an Adjustor based on availability and workload (`ClaimAssigned`); the Surveyor follows in Workflow 2, once the vehicle's location is known.
 4. **Fraud Detection Service** scores the claim; a flag puts it on a Fraud Review hold for the Case Manager (`FraudFlagged`).
 5. **Notification Service** sends SMS, email and push messages to the assigned staff and to the customer (claim received, ID confirmed).
 
 ### Workflow 2 — Survey & Adjudication
 
-1. Customer finds a partner workshop or authorised service station by zip code or location (**Location Service**) and books an appointment (**Booking Service**); the workshop receives the initial accident details with the booking (`AppointmentBooked`). The customer may instead take the vehicle to an external workshop.
-2. Once the vehicle is dropped off, the customer selects a rental vehicle if the policy covers one; the Booking Service checks the cover with E3 (`RentalBooked`).
-3. **Surveyor** assesses the damage and submits the assessment from the Internal Portal or the mobile app, offline if needed; `SurveySubmitted` notifies the **Adjustor**.
+1. Customer finds a partner workshop or authorised service station by zip code or location (**Location Service**) and books an appointment (**Booking Service**); the workshop receives the initial accident details with the booking (`AppointmentBooked`). The customer may instead take the vehicle to an external workshop and give its address (`VehicleLocationSet`). The **Incident Management Service** then assigns the Surveyor whose field office covers that location (`ClaimAssigned`).
+2. Once the workshop confirms the vehicle is received (`VehicleReceived`), the customer selects a rental vehicle if the policy covers one; the Booking Service checks the cover with E3 (`RentalBooked`).
+3. **Surveyor** assesses the damage and submits the assessment from the Internal Portal or the mobile app, offline if needed; `SurveySubmitted` notifies the **Adjustor**. A surveyor who finds the repair cost above the configured share of the vehicle's value declares a total loss, and the claim continues in Workflow 6.
 4. **Adjustor** reviews the claim, documents and survey, then adjudicates the amount against the policy cover, which the Claims Service re-checks with E3.
-5. `ClaimApproved` notifies the customer of the approved amount and the workshop to proceed, and the Payment Service records what YCompany owes; `ClaimRejected` ends the claim.
+5. `ClaimApproved` notifies the customer of the approved amount and the workshop to proceed, and the Payment Service records what YCompany owes; `ClaimRejected` closes the claim once its dispute window ends.
+6. At any step an assignee can ask the customer for a missing document or detail (Information Requested), and within the dispute window the customer can dispute an approval or a rejection (Disputed) (§4, *Information requests, disputes and electronic signature*).
 
 ### Workflow 3 — Repair Tracking & Payment
 
 1. Workshop uploads the work order and estimates and updates the repair status (`WorkOrderUploaded`, `RepairStatusUpdated`; the claim is In Repair) → customer notified.
-2. Workshop updates the expected delivery date (`DeliveryDateChanged`) → customer notified of the change.
+2. Workshop updates the expected delivery date (`DeliveryDateChanged`) → customer notified of the change; the **Booking Service** extends the rental up to the policy's limit (`RentalChanged`).
 3. On completion, the workshop submits the final invoice (`InvoiceSubmitted`; the claim is Invoiced). For an external workshop, the customer uploads its invoice.
 4. Customer is notified of the amount due before paying, and **pays electronically** on Stripe's hosted payment page from the portal or the app (`PaymentReceived`).
-5. **Payment Service** pays the workshop — or, for an external workshop, reimburses the customer — through a Stripe Connect payout (`PaymentApproved`, `PayoutSent`); the claim moves to Paid, then Closed.
-6. Workshop tracks payment status in the Partner Portal; the customer in the portal or the app.
+5. When the workshop hands the vehicle back (`VehicleDelivered`), the rental ends; the rental partner submits its invoice (`RentalInvoiceSubmitted`), and any days beyond the cover are billed to the customer on the hosted payment page.
+6. **Payment Service** pays the workshop — or, for an external workshop, reimburses the customer — and the rental partner for the covered days, through Stripe Connect payouts (`PaymentApproved`, `PayoutSent`); the claim moves to Paid once everything is settled, then Closed.
+7. Workshop and rental partner track payment status in the Partner Portal; the customer in the portal or the app.
 
 ### Workflow 4 — Reporting
 
@@ -504,18 +589,28 @@ The five workflows below trace a claim through its full lifecycle and cover the 
 | Claims received and processed | Case Manager | Claims received, processed and pending; processing time | Claims assigned to that Case Manager |
 | Claims processed by role | Claims department (Case Manager and above) | For each Adjustor, Surveyor, Case Manager and Workshop: claims handled, average time in their stage, pending items; for workshops also repair turnaround, invoices and payment status | By role and region |
 | Ageing matrix | Case Manager, Regional Manager | Open claims by status and age band (0–7, 8–15, 16–30, 31–60, over 60 days), with SLA breaches; thresholds from the Configuration Service | Own claims or own region |
-| Fraud report | Case Manager, Regional Manager, Top Management | Flags by rule, review outcome (cleared or confirmed), amount at stake | By region |
+| Fraud report | Case Manager, Regional Manager, Top Management | Flags by rule (including ISO ClaimSearch matches), review outcome (cleared or confirmed), amount at stake | By region |
 | Regional dashboard | Regional Manager | Processing time, amount paid out, claim count by geography (state, county, zip code) | Own region |
 | Cross-region KPIs | Top Management | Claims received, amount paid out and processing time per region; regions with the most claims and the highest payouts; trends | All regions |
 | Audit extract | Auditor | A claim's processing history and its application audit-trail records | All claims, read-only |
 
-Every report runs on Redshift, never on the transactional databases. Row-level security limits each user to their region and role, and personal fields are masked for analytics users. Scheduled reports run as Redshift scheduled queries and on-demand reports as background jobs; the result is written to the reports bucket and delivered as a link in a notification (`ReportReady`, §9.2 rule 3). The audit extract reads the Audit DB through a read-only role.
+Every report runs on Redshift, never on the transactional databases. Row-level security limits each user to their region and role, and personal fields are masked for analytics users. Scheduled reports run as Redshift scheduled queries and on-demand reports as background jobs; the result is written to the reports bucket and delivered as a link in a notification (`ReportReady`, §9.2 rule 3). The audit extract reads the Audit DB through a read-only role. A claim belongs to the region of its loss location, fixed at first notice of loss through the region hierarchy in the Configuration Service; each staff member's region is held by the User / RBAC Service, and row-level security compares the two.
 
 ### Workflow 5 — Customer Self-Service
 
 1. Customer changes the correspondence address or the billing cycle in the portal or the app; a change to contact details requires MFA.
 2. **User / RBAC Service** passes the change to the Policy Administration System (E3), which owns policy and billing records (Assumption 16), and records the request in the application audit trail.
 3. **Notification Service** confirms the change to the customer.
+4. Customer pays a premium on Stripe's hosted payment page from the portal or the app; the **Payment Service** posts it to the policy's billing record in E3 (`PremiumPaid`), and the customer gets a receipt.
+5. Customer opts in to or out of SMS; the **User / RBAC Service** records the consent, and a STOP reply has the same effect.
+
+### Workflow 6 — Total Loss & Theft Settlement
+
+1. The **Surveyor** declares a total loss, or the customer reported a theft with its police report at first notice of loss (no survey).
+2. The **Adjustor** values the vehicle at market value less the deductible against the cover, which the Claims Service re-checks with E3 (`ClaimApproved`).
+3. The customer accepts the settlement with an electronic signature (`SettlementAccepted`) or disputes it.
+4. The **Payment Service** pays the customer by Connect payout (`PaymentApproved`, `PayoutSent`); a lienholder's share is paid by YCompany's finance team from the ledger posting. Any rental ends at settlement.
+5. The claim moves to Paid, then Closed; salvage disposal happens outside eClaims.
 
 ---
 
@@ -526,14 +621,14 @@ Every report runs on Redshift, never on the transactional databases. Row-level s
 | NFR | Requirement | Implementation in eClaims |
 |---|---|---|
 | **Availability** | 24×7 operation; system restarts itself on any crash | Multi-AZ ECS across 3 zones; container health checks every 5 s with automatic restart; RDS Multi-AZ failover in under 60 s; a warm standby in us-east-2 takes over if us-east-1 fails |
-| **Scalability** | Handle 200M+ customers and future growth; auto-scale to demand | ECS target-tracking auto-scaling (minimum 2 tasks per service across AZs; maximum sized from the workload model, ceiling 100); read replicas, RDS Proxy and table partitioning; SQS buffering; Redis caching — see §9 |
+| **Scalability** | Handle 200M+ customers and future growth; auto-scale to demand | ECS target-tracking auto-scaling (minimum 2 tasks per service across AZs; maximum sized from the workload model, ceiling 100); four database instance groups that scale independently; read replicas, RDS Proxy and table partitioning; SQS buffering; Redis caching — see §9 |
 | **Performance** | 99% of services complete in **< 5,000 ms**, peak and non-peak | Redis L1 cache; CloudFront edge cache; connection pooling; query indexing; slow work kept off the request path (asynchronous integrations, direct-to-S3 uploads, asynchronous reports); continuous P50/P95/P99 latency monitoring; latency budget and load-test gates in §9 |
-| **Security** | OWASP Top 10; encryption of sensitive data; RBAC | WAF + Shield with account takeover prevention; ALB reachable only through CloudFront; OAuth2 + JWT with MFA for customers and partners; RBAC at every layer; KMS AES-256 at rest; TLS 1.2+ in transit; every upload malware-scanned; GuardDuty, Security Hub, Inspector and Macie; code, dependency, image and infrastructure scans plus a ZAP scan in the pipeline; PCI-DSS scope limited to Stripe's hosted page; full audit trail |
+| **Security** | OWASP Top 10; encryption of sensitive data; RBAC | WAF + Shield Advanced with account takeover prevention; Internal Portal admitted only from corporate addresses, with Okta device assurance for staff; ALB reachable only through CloudFront; OAuth2 + JWT with MFA for customers and partners; RBAC at every layer; KMS AES-256 at rest, plus field-level encryption of Restricted data; personal data masked in logs; a private Direct Connect path to YCompany's systems; TLS 1.2+ in transit; every upload malware-scanned; GuardDuty, Security Hub, Inspector and Macie; code, dependency, image and infrastructure scans plus a ZAP scan in the pipeline; PCI-DSS scope limited to Stripe's hosted page; full audit trail |
 | **Resilience / Reliability** | Self-healing; no single point of failure | Circuit breakers and exponential-backoff retries; blue-green deployment; RTO < 15 min, RPO < 5 min for an Availability Zone failure; for a Region failure, RTO < 30 min and RPO < 5 min for the database (< 15 min for S3 objects), given a pre-approved, game-day-tested runbook and pre-raised us-east-2 quotas; the Region RTO covers actions on existing claims too: each claim's workflow execution is rebuilt in us-east-2 on its first action after failover, which makes that one action slightly slower (§4, Deployment Topology), and a change made within the RPO window before the failure is lost and has to be re-entered |
 | **Observability** | Enough logging to debug any error; SLA monitoring | Structured JSON logs → CloudWatch; X-Ray distributed tracing; CloudWatch Synthetics canaries on the main journeys; CloudTrail audit; dead-letter-queue and queue-age alarms; custom KPI metrics and automated SLA alerts, including claim time-to-resolve alerts |
-| **Flexibility / Deployability** | No code changes for role config; on-premise **and** cloud | Configuration & RBAC services for administrative role changes; container images plus an on-premise profile on Kubernetes with a portable equivalent for each managed service (§4, Deployment Options); Terraform for every environment |
-| **Compliance / Non-Repudiation** | Audit trail; no repudiation; guard against fraud | Append-only, hash-chained audit store on its own database, with KMS-signed hourly digests in S3 Object Lock (WORM, compliance mode); SHA-256 digest of every claim document, checked by S3 at upload; CloudTrail for infrastructure audit; rule-based (then ML) fraud detection with a Fraud Review hold; every communication archived under Object Lock |
-| **Data management** | Store, back up and recover in a distributed environment | Multi-AZ RDS with automated backups and point-in-time recovery under AWS Backup, copied to us-east-2; RDS and Audit DB cross-Region read replicas and OpenSearch cross-cluster replication to us-east-2; S3 Cross-Region Replication; versioned object storage; reporting warehouse fed by zero-ETL and restored from cross-Region snapshot copies |
+| **Flexibility / Deployability** | No code changes for role config; on-premise **and** cloud | Configuration & RBAC services for administrative role changes; the claim type selects its workflow definition, so a new path or line of business is configuration plus a definition; versioned APIs and event schemas (§4, *Interface standards and versioning*); container images plus an on-premise profile on Kubernetes with a portable equivalent for each managed service (§4, Deployment Options); Terraform for every environment |
+| **Compliance / Non-Repudiation** | Audit trail; no repudiation; guard against fraud; industry-standard compliance | Append-only, hash-chained audit store on its own database, with KMS-signed hourly digests in S3 Object Lock (WORM, compliance mode); SHA-256 digest of every claim document, checked by S3 at upload; CloudTrail for infrastructure audit; rule-based (then ML) fraud detection with a Fraud Review hold and a cross-insurer check through ISO ClaimSearch; every communication, in and out, archived under Object Lock; customer declarations and settlement acceptances signed with step-up MFA and stored as PDFs with their digests; built to support GLBA, NAIC-model state insurance data security laws (72-hour regulator notice), CCPA/CPRA where it applies, PCI-DSS (Stripe's hosted page) and a SOC 2 Type II report |
+| **Data management** | Store, back up and recover in a distributed environment | Multi-AZ RDS in four instance groups, with automated backups and point-in-time recovery under AWS Backup, copied to us-east-2; RDS and Audit DB cross-Region read replicas and OpenSearch cross-cluster replication to us-east-2; S3 Cross-Region Replication; versioned object storage; reporting warehouse fed by zero-ETL and restored from cross-Region snapshot copies |
 | **Maintainability** | Testability, configurability, upgradeability | Independently deployable services; automated test suites, security scans and k6 and ZAP gates in staging; blue-green upgrades with expand-then-contract migrations; feature flags |
 
 ---
@@ -554,7 +649,7 @@ Every report runs on Redshift, never on the transactional databases. Row-level s
 | Scheduled jobs | **Amazon EventBridge Scheduler + AWS Lambda** | Serverless timers for the SLA scan, document reconciliation and execution clean-up |
 | Workflow | **AWS Step Functions** | Managed state machine with a built-in audit trail and no infrastructure to run |
 | Notifications | **AWS SES** (email) + **SNS** (SMS and mobile push to APNs and FCM) | AWS-native, pay-per-use, compliant delivery; no separate push vendor |
-| Payments | **Stripe** (PCI-DSS Level 1), including **Stripe Connect** payouts | Industry-standard, with built-in fraud detection; keeps YCompany out of PCI scope; Connect pays workshops and customers without eClaims holding bank details |
+| Payments | **Stripe** (PCI-DSS Level 1), including **Stripe Connect** payouts | Industry-standard, with built-in fraud detection; keeps YCompany out of PCI scope; Connect pays workshops, rental partners and customers without eClaims holding bank details |
 | Connection pooling | **RDS Proxy** | Keeps database connections bounded as tasks scale out, and shortens failover |
 | Analytics feed | **Zero-ETL integration** (RDS PostgreSQL → Redshift) | Changes arrive within seconds with no pipeline to build or run (Messaging, Analytics and Identity DAR) |
 | Audit store | **PostgreSQL (append-only)** + **S3 Object Lock** | Hash-chained records with KMS-signed digests under WORM retention; portable to PostgreSQL with MinIO on-premise |
@@ -568,10 +663,17 @@ Every report runs on Redshift, never on the transactional databases. Row-level s
 | Load testing | **k6** | Scripted load tests in staging, versioned with the code |
 | Observability | **CloudWatch + X-Ray + CloudTrail** | Native AWS integration with minimal operational overhead |
 | Synthetic monitoring | **CloudWatch Synthetics** | Canaries for the main journeys every minute and during each release |
-| Security | **AWS WAF + Shield + KMS + IAM + GuardDuty + Security Hub + Macie** | Layered, defence-in-depth security across the stack |
+| Security | **AWS WAF + Shield Advanced + KMS + IAM + GuardDuty + Security Hub + Macie** | Layered, defence-in-depth security across the stack |
 | Backup | **AWS Backup** | One backup policy with cross-Region copies |
 | Data warehouse | **Amazon Redshift** (RA3) | Petabyte-scale analytics for management reporting |
 | Identity / SSO | **Okta** (via IAM) | Centralised enterprise identity and single sign-on |
+| Hybrid connectivity | **AWS Direct Connect** + **Site-to-Site VPN** + **Transit Gateway** | Private, resilient path to YCompany's data centre from both Regions |
+| SMS sender numbers | **AWS End User Messaging SMS** (short code, toll-free) | Registered US origination for SMS sent through SNS |
+| Inbound email | **Amazon SES** email receiving | Customer replies archived with the claim |
+| Field-level encryption | **AWS Encryption SDK** with KMS | Restricted fields unreadable without their key |
+| Document generation | **WeasyPrint** (HTML to PDF) | Signed declarations and settlement acceptances as PDFs |
+| Contract checks | **oasdiff** · **EventBridge schema registry** | Breaking API and event changes caught in the pipeline |
+| Fraud bureau | **Verisk ISO ClaimSearch** | Cross-insurer claim matching |
 
 ### POC coverage
 
@@ -600,8 +702,10 @@ These components are **not in the POC**; the architecture and the estimate cover
 - Incident Management auto-assignment
 - Fraud Detection
 - Location Service
+- Repair & Work Order Service
+- Booking Service
 
-Also not in the POC: the Repair & Work Order Service and the Booking Service, added in v1.9 and not yet shown as separate services in the estimate; and the mobile app, which is in Phase 1 but not yet in the estimate (§10, Assumption 13).
+Also not in the POC: the mobile app, which is in Phase 1 but not yet in the estimate (§10, Assumption 13). Nor are the v2.0 additions — information requests, disputes and electronic signature, claim messages, total-loss and theft paths, rental extensions and payouts, premium payment, ISO ClaimSearch, ledger postings and the private link to YCompany — which the architecture and the estimate cover.
 
 ---
 
@@ -658,7 +762,7 @@ targets so the mandated budget is never approached:
 | **Total synchronous request** | **≈100–200 ms** | **≤1,000 ms (reads) · ≤2,000 ms (writes) vs the mandated 5,000 ms** |
 
 Six design rules keep the 99th percentile inside the budget:
-1. **Nothing slow on the request path.** SMS and email, payment callbacks, workshop integrations, fraud scoring and report generation run asynchronously through EventBridge and SQS.
+1. **Nothing slow on the request path.** SMS and email, payment callbacks, workshop integrations, fraud scoring, the ISO ClaimSearch query, ledger postings and report generation run asynchronously through EventBridge and SQS.
 2. **Uploads bypass the API.** Browsers and the mobile app upload photos and PDFs directly to S3 with pre-signed POSTs; the API only checks access and issues the upload policy. Malware scanning, metadata and indexing run asynchronously after the upload (§4, *Document upload, validation and claim linkage*), so a 10 MB photo on a slow mobile link never counts against API latency.
 3. **Reports are asynchronous.** Management reports are generated from Redshift as jobs and delivered as a link or notification. They never query the transactional database in the request path.
 4. **Every outbound call is bounded.** Each has a timeout of at most 2 s, one retry with jitter, and a circuit breaker.
@@ -675,11 +779,11 @@ Six design rules keep the 99th percentile inside the budget:
 | Scheduled jobs (EventBridge Scheduler, Lambda) | Serverless; the SLA scan and reconciliation read the read replica, never the primary | Job duration and failures alarmed |
 | Workflow orchestration (Step Functions) | One Standard execution per open claim; short-lived sub-flows as Express Workflows | Open-execution quota raised to about 3 million per Region in both Regions, against ≈1.0 million open claims (§9.1), a catastrophe week and superseded executions awaiting clean-up; us-east-2 StartExecution, task-callback and state-transition rates raised to us-east-1's before go-live; throttling alarmed in CloudWatch |
 | Cache (ElastiCache Redis) | Cluster mode with replicas | Memory > 70% or CPU > 60% |
-| Transactional database (RDS PostgreSQL, Multi-AZ) | Vertical scaling for writes; read replicas for queues and status reads; RDS Proxy pools connections as tasks scale out; monthly partitions for status history, communications and document metadata; claims partitioned by creation month beyond 100 million rows | Replica lag < 1 s; CPU < 70% |
+| Transactional database (RDS PostgreSQL, Multi-AZ) | Four instance groups that scale independently; vertical scaling for writes within a group; read replicas for queues and status reads; RDS Proxy pools connections as tasks scale out; monthly partitions for status history, communications and document metadata; claims partitioned by creation month beyond 100 million rows | Replica lag < 1 s; CPU < 70% |
 | Search (OpenSearch) | Add data nodes; index lifecycle management | JVM memory pressure, storage |
 | Object storage (S3) | Unlimited. Lifecycle tiering: Standard → Standard-IA after 90 days → Glacier Deep Archive one year after claim closure. Object Lock for retention | — |
 | Analytics (Redshift) | Zero-ETL integration from the transactional store (a CQRS read model); concurrency scaling for month-end reporting | Queue wait time; integration lag |
-| Notifications (SNS, SES) | Queued through SQS; sending quotas raised before go-live and before known peak seasons | Throttling metrics |
+| Notifications (SNS, SES) | Queued through SQS; sending quotas raised before go-live and before known peak seasons; SMS throughput set by the short code's registered rate, raised with the carriers before known peaks | Throttling metrics |
 
 ### 9.4 Initial capacity sizing
 
@@ -729,7 +833,7 @@ Load testing is part of the Testing phase in the estimate.
 - Internal Portal (web, React) — all six roles, plus the administration console
 - Partner Portal (web, React) — partner workshops, authorised service stations and car-rental partners
 - Mobile App (iOS/Android, React Native) for customers and surveyors — in Phase 1, but not yet in the estimate (Assumption 13)
-- Claims lifecycle: Submission → Survey → Adjudication → Approval → Repair → Invoice → Payment → Closure, with Fraud Review, Withdrawn and Reopened
+- Claims lifecycle: Submission → Survey → Adjudication → Approval → Repair → Invoice → Payment → Closure, with Fraud Review, Information Requested, Disputed, Withdrawn and Reopened
 - Customer self-service: correspondence-address and billing-cycle changes, passed to the Policy Administration System
 - Document management and archival, with upload validation and malware scanning
 - SMS, email and push notifications on every status change; claim SLA and ageing alerts
@@ -737,6 +841,14 @@ Load testing is part of the Testing phase in the estimate.
 - Electronic payment and payouts (Stripe, including Stripe Connect)
 - AWS cloud deployment; on-premise deployment profile designed (§4, Deployment Options)
 - Multi-Region warm standby: us-east-1 primary, us-east-2 standby (§4, Deployment Topology)
+- Total-loss and theft claims, with cash settlement to the customer
+- Information requests, disputes, settlement acceptance and electronic signature
+- Two-way claim messages, inbound email replies included, all archived
+- Rental opened on drop-off, extended with the delivery date and paid to the rental partner
+- Premium payment, posted to the Policy Administration System
+- Cross-insurer fraud check through ISO ClaimSearch
+- Ledger postings to YCompany's general ledger
+- A private connection to YCompany's data centre in both Regions
 
 ### Out of scope (Phase 1)
 
@@ -745,6 +857,11 @@ Load testing is part of the Testing phase in the estimate.
 - Multi-language support — English only, per the requirements
 - Car-rental integration API — the UI is present; the third-party integration is deferred
 - Legacy-system migration and historical data backfill
+- Term and life insurance claims — Phase 1 covers motor claims; a new line of business adds its claim types, workflow definitions, document types and rules (§3), and needs its own assessment, for example of the health data in life claims
+- Claim reserves — set and held in YCompany's finance systems; eClaims supplies the assessed and approved amounts
+- Salvage disposal of total-loss vehicles
+- The partner API — designed (§4, *Partner integration (Phase 2)*), built in Phase 2
+- Third-party claimants who are not YCompany policyholders — they report through YCompany's existing channels
 
 ### Assumptions
 
@@ -752,7 +869,7 @@ Load testing is part of the Testing phase in the estimate.
 2. Customer identity is verified via the existing **policy number** at registration.
 3. Partner workshops are **pre-registered** in the system by the Administrator.
 4. Payment is via **Stripe**; PCI-DSS scope is limited to Stripe's hosted payment page.
-5. SMS notifications are delivered via **AWS SNS** (US numbers only for Phase 1).
+5. SMS notifications are delivered via **AWS SNS** from a registered US short code, with toll-free numbers as a fallback, to US numbers only in Phase 1. Customers opt in at registration, and YCompany registers the sender numbers with the carriers before go-live.
 6. Surveyor geo-coverage areas are **pre-configured** in the Location Service by the Administrator.
 7. The delivery team has an AWS account with the necessary permissions.
 8. Where the case study is silent, reasonable industry-standard assumptions have been made, as permitted by the assignment guidelines.
@@ -765,6 +882,13 @@ Load testing is part of the Testing phase in the estimate.
 15. YCompany sets the **retention period** for each document class before go-live, under the insurance regulations that apply to it (Document Management DAR).
 16. The Policy Administration System (E3) accepts **correspondence-address and billing-cycle changes** through an API; eClaims passes each change on and keeps no copy of the policy record beyond the snapshot taken at first notice of loss.
 17. **External (non-partner) workshops** have no eClaims access; their estimates and invoices reach eClaims as documents the customer uploads, and the customer is reimbursed.
+18. The Policy Administration System (E3) and the **general ledger** (E4) run in YCompany's data centre. YCompany provides the Direct Connect cross-connects and its side of the VPN.
+19. E3 accepts **premium payment postings** through an API.
+20. A claim's **region** is the region of its loss location, by the hierarchy YCompany maintains in the administration console.
+21. YCompany holds an **ISO ClaimSearch** membership, and eClaims uses YCompany's credentials.
+22. A **lienholder's share** of a total-loss or theft settlement is paid by YCompany's finance team from the ledger posting.
+23. Staff use **devices managed by YCompany** and enrolled in Okta device assurance. YCompany provides its corporate address ranges for the Internal Portal rule.
+24. YCompany's legal team confirms that **click-to-sign** with step-up MFA, a signed PDF and an audit record is sufficient for claim declarations and settlement acceptances.
 
 ---
 
@@ -787,6 +911,10 @@ Load testing is part of the Testing phase in the estimate.
 | 11 | DAR — Messaging, Analytics and Identity | `docs/dar/Utsav_eClaims_DAR_Messaging_Analytics_Identity.docx` |
 | 12 | DAR — Document Management | `docs/dar/Utsav_eClaims_DAR_Document_Management.docx` |
 | 13 | Effort estimate, schedule and resource plan | `docs/estimation/Utsav_eClaims_Estimates.xlsm` |
+| 14 | eClaims Architecture Diagram (Visio export) | `docs/sad/architecture-diagram.vsdx` |
+| 15 | ACORD data standards | https://www.acord.org/standards-architecture/why-standards |
+| 16 | NAIC Insurance Data Security Model Law (#668) | https://content.naic.org/sites/default/files/model-law-668.pdf |
+| 17 | Electronic Signatures in Global and National Commerce Act (ESIGN, Public Law 106-229) | https://www.govinfo.gov/app/details/PLAW-106publ229 |
 
 ### Appendix A — Requirements Traceability Matrix
 
@@ -800,19 +928,19 @@ The matrix confirms that every capability called for in the case study is addres
 | Change the billing cycle | Customer Portal / Mobile App · User/RBAC Service · Policy Administration System (E3) |
 | Submit claim with photos / police report | Customer Portal / Mobile App · Claims Service · Document Service (S3, validated and malware-scanned) |
 | Generate Claim ID on first notice of loss | Claims Service (policy checked with E3; `ClaimCreated`) |
-| Notify Incident Manager, Adjustor, Surveyor | Incident Management Service (`ClaimAssigned`) · Notification Service |
+| Notify Incident Manager, Adjustor, Surveyor | Incident Management Service (`ClaimAssigned`; the Surveyor once the vehicle's location is known) · Notification Service |
 | Constant status updates to customer | Notification Service (SMS, email, push) · EventBridge (status events) |
 | Partner-workshop list & appointment by location/zip | Location Service (OpenSearch, Amazon Location Service) · Booking Service · Customer Portal / Mobile App |
 | Choose a partner workshop or any external workshop | Booking Service · Repair & Work Order Service (external-workshop invoice uploaded by the customer) |
 | Partner workshop intimated of the initial accident details | Booking Service (`AppointmentBooked`) · Notification Service · Partner Portal |
-| Rental-vehicle selection by policy coverage | Booking Service (cover checked with E3) · Customer Portal / Mobile App (car-rental API deferred) |
+| Rental-vehicle selection by policy coverage | Booking Service (cover checked with E3; `VehicleReceived` opens it, `DeliveryDateChanged` extends it) · Customer Portal / Mobile App (car-rental API deferred) |
 | Surveyor submits assessment online, via website or app | Internal Portal · Mobile App (offline capture) · Claims Service · Workflow Engine |
 | Adjustor adjudicates against policy coverage | Claims Service (cover re-checked with E3) · Workflow Engine |
 | Case Manager delegate / override | Incident Management Service · Claims Service (override) |
 | Auditor read-only visibility | RBAC (read-only role) · Reporting Service (audit extract) |
 | Workshop uploads work order & estimates | Partner Portal · Repair & Work Order Service · Document Service |
 | Repair-status & delivery-date updates to customer | Repair & Work Order Service · Notification Service |
-| Customer notified of the final bill and pays electronically | Repair & Work Order Service (`InvoiceSubmitted`) · Payment Service (Stripe hosted payment page) |
+| Customer makes electronic payments: the final bill and premiums | Repair & Work Order Service (`InvoiceSubmitted`) · Payment Service (Stripe hosted payment page; premiums posted to E3) |
 | Electronic payment to workshops and customers (no cheques) | Payment Service (Stripe Connect payouts) |
 | Workshop tracks payment status | Payment Service · Partner Portal |
 | Alert sub-system analysing the time to resolve | EventBridge Scheduler SLA scan (`SlaBreached`) · Notification Service |
@@ -821,7 +949,7 @@ The matrix confirms that every capability called for in the case study is addres
 | Regional & top-management reporting | Reporting Service · Redshift (row-level security by region) |
 | Central document management for audit/compliance | Document Service (S3 with versioning and Object Lock + OpenSearch) · application audit trail |
 | Alerts/notifications on every status change (SMS/email) | Notification Service (SNS + SES + push) |
-| Archive all customer communication | Notification Service · communications bucket (S3 Object Lock) · Notification DB |
+| Archive all customer communication | Notification Service (sent and received: portal, app and SES inbound replies) · communications bucket (S3 Object Lock) · Notification DB |
 | Well-defined data and interface standards | OpenAPI from FastAPI · event catalogue with a common envelope (§4, Layer 4) |
 | Identity management with role-based authN/authZ | Okta / IAM · Auth Service · RBAC Service |
 | Role actions configurable without code changes | Configuration Service (administration console) · RBAC Service |
@@ -831,36 +959,46 @@ The matrix confirms that every capability called for in the case study is addres
 | 24×7 with self-restart | Multi-AZ ECS · health checks · auto-restart |
 | On-premise **and** cloud deployment | Container images · on-premise profile on Kubernetes (§4, Deployment Options) · Terraform |
 | 99% of requests < 5,000 ms | Workload model, latency budget and load-test gates (§9) · caching · asynchronous processing |
-| OWASP Top 10 protection | WAF + Shield · secure SDLC with security scans in the pipeline (§4, CI/CD Pipeline) |
+| OWASP Top 10 protection | WAF + Shield Advanced · secure SDLC with security scans in the pipeline (§4, CI/CD Pipeline) |
+| Surveyor field office covers where the vehicle is for repairs | Incident Management on `AppointmentBooked` / `VehicleLocationSet` · Location Service |
+| Rental partner paid electronically | Booking Service (`RentalInvoiceSubmitted`) · Payment Service (Connect payout) |
+| Customer informed of, and accepts, how much will be paid | Claims Service (`SettlementAccepted`, Disputed) · electronic signature (§4) |
+| Paperless exchange: missing information requested online | Claims Service (Information Requested) · Notification Service |
+| Accident **or loss**: total loss and theft | Workflow Engine (claim-type definitions) · Workflow 6 |
+| Confidential data in compliance with industry standards | *Data protection and regulatory compliance* (§4) |
+| Fraudulent claims across insurers | Fraud Detection Service · ISO ClaimSearch |
+| Regional reporting by region | Configuration Service (region hierarchy) · Redshift row-level security |
+| Third-party integrations | Partner Portal (Phase 1) · partner API (Phase 2, §4) |
 
 ### Appendix B — Architecture Diagram
 
 The full architecture is provided as an editable draw.io / diagrams.net source file at
-`docs/sad/architecture-diagram.drawio.xml`. It contains seven pages, reading top-down from business
+`docs/sad/architecture-diagram.drawio.xml`. It contains eight pages, reading top-down from business
 context to implementation detail:
 
-1. **System Context** — eClaims drawn as a single black box against every actor and external system that touches it (MSAG "System Model — functional aspect"). Actors are tagged A1 (Customer), B1–B6 (the six internal roles) and B7 (Administrator), and C1–C4 (Partner Workshop, Car Rental Partner, Authorized Service Station, and the External Workshop, which has no eClaims access). External systems are tagged D1–D6 (Stripe, Okta, SNS, SES, APNs / FCM, Amazon Location Service) and E1–E3 (the deferred car-rental API, customer-supplied evidence, and YCompany's Policy Administration System). The box shows the four channels including the Mobile App, nine capabilities, the extended lifecycle and the event catalogue. An interaction register beneath the diagram tags each of the 22 flows with what crosses the boundary and over which channel or protocol; flows ⑰–㉒ were appended in v1.9, so earlier numbers are unchanged.
-2. **High Level Solution** — a single compact one-page view of the entire solution (MSAG "Solution diagram"), aimed at senior stakeholders. Bands A–F run top to bottom (Users, Channels, Secure Edge, Business Capabilities C1–C8, Event Backbone, Information & Cloud Platform E1–E8, External Systems F1–F8). Every channel, including the Mobile App, enters the secure edge, drawn as the chain Route 53 + ARC → WAF → CloudFront → ALB → Auth. Each capability reaches its data, and capabilities consume and publish events both ways. The end-to-end claim flow is numbered ①–⑩ on the edges and walked in prose in the notes panel.
+1. **System Context** — eClaims drawn as a single black box against every actor and external system that touches it (MSAG "System Model — functional aspect"). Actors are tagged A1 (Customer), B1–B6 (the six internal roles) and B7 (Administrator), and C1–C5 (Partner Workshop, Car Rental Partner, Authorized Service Station, the External Workshop, which has no eClaims access, and partner systems on the Phase 2 partner API). External systems are tagged D1–D7 (Stripe, Okta, SNS, SES, APNs / FCM, Amazon Location Service, Verisk ISO ClaimSearch) and E1–E4 (the deferred car-rental API, customer-supplied evidence, YCompany's Policy Administration System and its general ledger, the last two behind a private link). The box shows the four channels including the Mobile App, nine capabilities, the extended lifecycle and the event catalogue. An interaction register beneath the diagram tags each of the 24 flows with what crosses the boundary and over which channel or protocol; flows ⑰–㉒ were appended in v1.9 and ㉓–㉔ in v2.0, so earlier numbers are unchanged.
+2. **High Level Solution** — a single compact one-page view of the entire solution (MSAG "Solution diagram"), aimed at senior stakeholders. Bands A–F run top to bottom (Users, Channels, Secure Edge, Business Capabilities C1–C10, Orchestration & Event Backbone D1–D2, Information & Cloud Platform E1–E8, External Systems F1–F10). C9 is Incident Assignment & Delegation, C10 Administration & Configuration, and D2 the claim process orchestration (workflow engine). Every channel, including the Mobile App, enters the secure edge, drawn as the chain Route 53 + ARC → WAF → CloudFront → ALB → Auth. Each capability reaches its data, and capabilities consume and publish events both ways. The end-to-end claim flow is numbered ①–⑩ on the edges and walked in prose in the notes panel.
 3. **Logical Architecture** — a technology-agnostic, layered view (MSAG "Application / Component Logical Architecture") naming roles rather than products, so it applies equally to the cloud or on-premise deployment option (§7):
    - the presentation layer includes the Mobile App and the Administration Console;
    - functional modules are tagged M1–M16;
    - the integration layer shows the outbox relay, dead-letter and replay, the scheduler, change-data capture and inbound callbacks;
    - the data layer shows a store per module group, the audit store and the communication archive;
-   - cross-cutting concerns X1–X12 are drawn once in a dedicated right-hand column.
+   - cross-cutting concerns X1–X13 are drawn once in a dedicated right-hand column.
 
    Page 4 gives the concrete technology mapping of every role shown here.
 4. **Layered Solution Architecture** — the six layers as horizontal swim-lanes, with directional data flows annotated by protocol or event:
-   - **Services and data.** All thirteen Layer 3 services, each with its own database, behind RDS Proxy and an in-Region read replica.
-   - **Events.** Every publisher drops into one bus to the transactional outbox relay, and one bus rises from SQS (a queue per consumer, with dead-letter queues) to the consumers. Each service box lists the events it publishes (⇢).
+   - **Services and data.** All thirteen Layer 3 services, each with its own database on one of four instance groups, behind RDS Proxy and an in-Region read replica. Each service box lists the events it publishes (⇢) and, where v2.0 added a consumer, the events it consumes (⇠).
+   - **Events.** Every publisher drops into one bus to the transactional outbox relay, and one bus rises from SQS (a queue per consumer, with dead-letter queues) to the consumers. Events are named as in the §4 catalogue.
    - **Documents.** The validated upload path — pre-signed POST, GuardDuty scan, confirmation and claim link — and the indexing consumer.
    - **Payments.** Stripe's hosted payment page, webhooks and Connect payouts.
-   - **Other flows.** The Policy Administration System checks; the communications archive; EventBridge Scheduler jobs; the zero-ETL feed into Redshift; the Audit DB with its Object Lock archive; the active-Region (ARC) check made by side-effect tasks.
-   - **Conventions.** Workflows ①–⑤ are colour-coded on the arrows and route labels; a hop that several workflows share is drawn in dark grey with their numbers on its label. External systems sit in a right-hand column with their page 1 tags. A capability-mapping callout explains the Layer 2 API-Gateway design decision (§4).
+   - **Other flows.** The Policy Administration System checks and the general ledger, both in a YCompany data-centre group; ISO ClaimSearch; the communications archive; EventBridge Scheduler jobs; the zero-ETL feed into Redshift; the Audit DB with its Object Lock archive; the active-Region (ARC) check made by side-effect tasks.
+   - **Conventions.** Workflows ①–⑥ are colour-coded on the arrows and route labels; a hop that several workflows share is drawn in dark grey with their numbers on its label. External systems sit in a right-hand column with their page 1 tags. A capability-mapping callout explains the Layer 2 API-Gateway design decision (§4).
 5. **Cloud / Deployment Architecture** — the AWS network-topology realisation of the six layers above (MSAG "System Model — Technical aspect": deployment type, network type, data transmission), for the Phase 1 footprint: us-east-1 primary and us-east-2 warm standby, each Multi-AZ (§10). Every component is drawn with real AWS Architecture Icons inside proper AWS group containers (Region/VPC/AZ/Subnet/Security-Group), scoped to this page and page 6 only.
    - **Edge.** Route 53 (G1) fronts a global edge tier (G2 WAF + Shield, G3 CloudFront, G4 ARC routing controls). CloudFront has two origins: the S3 portal files and the ALB, which accepts traffic only from CloudFront.
    - **us-east-1.** One regional ALB (V1) is drawn as a band across the zones. Each zone repeats the public/private/data pattern: NAT Gateway, Fargate tasks with RDS Proxy (V7), RDS with a database per service (V4), in-Region read replica (V8), Audit DB (V9), ElastiCache and OpenSearch. A Redshift band (V10) sits in the data subnets.
-   - **Managed services.** N1–N18 include the EventBridge Scheduler, GuardDuty Malware Protection, Security Hub with Inspector and Macie, AWS Backup, CloudWatch Synthetics, ACM and Amazon Location Service.
-   - **us-east-2.** It repeats the pattern in compact form (V1′–V10′, N1′–N15′), including RDS Proxy, the Audit DB replica, the restored Redshift and the standby event, workflow and scheduler services.
+   - **Managed services.** N1–N19 include the EventBridge Scheduler, GuardDuty Malware Protection, Security Hub with Inspector and Macie, AWS Backup, CloudWatch Synthetics, ACM, Amazon Location Service and Amazon Textract.
+   - **Hybrid.** H1–H3 (Direct Connect, its backup VPN and the Direct Connect gateway) and the Transit Gateways V11 and V11′ connect both Regions to YCompany's data centre, where E3 and E4 run; D7 ISO ClaimSearch joins the External SaaS column.
+   - **us-east-2.** It repeats the pattern in compact form (V1′–V11′, N1′–N15′), including RDS Proxy, the Audit DB replica, the restored Redshift and the standby event, workflow and scheduler services.
    - **Flows.** Browser and app uploads go straight to S3, Stripe webhooks come in, and SNS delivers mobile push (D5). A registry table indexes every tag.
 6. **CI/CD Pipeline** — the release workflow behind Layer 6's CodePipeline/CodeBuild/CodeDeploy/ECR toolchain, chosen for its fully-managed, pay-per-use cost profile over a self-run alternative like Jenkins. A push to GitHub (P1, through AWS CodeConnections) triggers CodePipeline (P2) through five stages:
    - **Build & Scan:** P4 → P5, with code scans (Q5) and Amazon Inspector image scanning (Q4).
@@ -868,8 +1006,9 @@ context to implementation detail:
    - **Pre-production in the development and staging accounts:** the migration task (P17), a blue/green deploy (P14), the k6, integration and ZAP gates (P15), and the mobile build to TestFlight and Google Play (P19).
    - **Release approval:** P16.
    - **Production:** CodeDeploy (P7) shifts ALB traffic between the Blue (P10) and Green (P11) task sets, while Synthetics canaries (P18) and a CloudWatch alarm (R1) can roll back. ECR replicates each image to us-east-2 (P12), and a cross-Region CodeDeploy action (P13) repeats the release there.
-7. **Bounded Contexts (Domain View)** — the Customer, Internal and Partner domains with every Layer 3 service placed in one of them. Partner capabilities are mapped to the services that own them, and E3 sits outside the domains. Events are drawn both ways — what each domain publishes and what the backbone delivers to it — and the shared platform names the application audit trail, with CloudTrail as infrastructure audit only.
+7. **Bounded Contexts (Domain View)** — the Customer, Internal and Partner domains with every Layer 3 service placed in one of them. Partner capabilities are mapped to the services that own them, and E3 sits outside the domains. Events are drawn both ways — what each domain publishes and what the backbone delivers to it — and the shared platform names the application audit trail, with CloudTrail as infrastructure audit only. E3, E4 and D7 sit outside the domains.
+8. **On-Premise Deployment Architecture** — the on-premise profile (§4, *Deployment Options*) as a physical topology across two YCompany data centres (MSAG 'System Model — Technical aspect'), with the same zones, replication and failover pattern as page 5: a global server load balancer and WAF at the edge; a Kubernetes cluster per data centre running every service with Camunda, Kafka and the scheduled jobs; PostgreSQL with Patroni for the four instance groups and the audit store, Redis, OpenSearch, MinIO and the warehouse in the data zone; identity, secrets, observability, security, backup and delivery tooling in the management zone; and replication from the first data centre to the second.
 
-Pages 1–3, 5 and 6 completed the Nagarro MSAG diagram set (`requirements/MSAG-Diagram-Preparation-Guidelines-v1.1.pdf`); pages 4 and 7 come from the original two-page deliverable. All seven pages were revised for v1.9.
+Pages 1–3, 5, 6 and 8 complete the Nagarro MSAG diagram set (`requirements/MSAG-Diagram-Preparation-Guidelines-v1.1.pdf`); pages 4 and 7 come from the original two-page deliverable. All eight pages were revised for v2.0. A Visio export of every page is at `docs/sad/architecture-diagram.vsdx`.
 
 To view or edit: open the file in the diagrams.net desktop application or at https://app.diagrams.net.
